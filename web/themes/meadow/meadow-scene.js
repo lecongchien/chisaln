@@ -24,7 +24,7 @@ const DEFAULTS = {
   adaptive: 1,
   sigma: 74,
   warp: 36,
-  timeMode: 0, // 0 = Day, 1 = Moonlit Night, 2 = Auto by local clock
+  timeMode: 0, // 0 = Day, 1 = Golden Sunset, 2 = Moonlit Night, 3 = Auto by local clock
   cover: 0.34,
   flow: 1.0,
   flowers: 0.55,
@@ -78,6 +78,7 @@ const U = {
   uFlowers: gl.getUniformLocation(prog, 'uFlowers'),
   uEdge: gl.getUniformLocation(prog, 'uEdge'),
   uSeed: gl.getUniformLocation(prog, 'uSeed'),
+  uSunset: gl.getUniformLocation(prog, 'uSunset'),
   uNight: gl.getUniformLocation(prog, 'uNight'),
   uPond: gl.getUniformLocation(prog, 'uPond'),
   uWindA: gl.getUniformLocation(prog, 'uWindA'),
@@ -103,7 +104,7 @@ let paused = false, needsInitialSettle = true;
 const SCENE_SEED = 17.3;
 
 let simTime = 0, flowTime = 0, lastRaf = 0, lastDraw = 0;
-let nightMix = 0, nightInitialized = false;
+let sunsetMix = 0, nightMix = 0, moodInitialized = false;
 
 const pond = { x: 0, y: 0, rx: 0, ry: 0, active: false, initialized: false };
 
@@ -273,17 +274,24 @@ function commitField(animate = true) {
   if (paused) renderFrame(simTime);
 }
 
-function computeTargetNight() {
+function computeTargetMood() {
   const mode = Math.round(P.timeMode || 0);
-  if (mode === 1) return 1.0;
-  if (mode === 0) return 0.0;
-  // Auto mode: day 06:00-17:30, dusk 17:30-19:00, moonlit night 19:00-05:00, dawn 05:00-06:00
+  if (mode === 0) return { sunset: 0.0, night: 0.0 };
+  if (mode === 1) return { sunset: 1.0, night: 0.0 };
+  if (mode === 2) return { sunset: 0.0, night: 1.0 };
+
+  // Auto local solar clock: Day 06:30-16:45, Golden Sunset 16:45-19:15, Moonlit Night 19:15-05:15, Dawn 05:15-06:30
   const now = new Date();
   const hr = now.getHours() + now.getMinutes() / 60 + now.getSeconds() / 3600;
-  if (hr >= 19.0 || hr < 5.0) return 1.0;
-  if (hr >= 6.0 && hr < 17.5) return 0.0;
-  if (hr >= 17.5 && hr < 19.0) return sstep(17.5, 19.0, hr);
-  return 1.0 - sstep(5.0, 6.0, hr);
+  if (hr >= 19.25 || hr < 5.25) return { sunset: 0.0, night: 1.0 };
+  if (hr >= 6.5 && hr < 16.75) return { sunset: 0.0, night: 0.0 };
+  if (hr >= 16.75 && hr < 18.0) return { sunset: sstep(16.75, 18.0, hr), night: 0.0 };
+  if (hr >= 18.0 && hr < 19.25) {
+    const k = sstep(18.0, 19.25, hr);
+    return { sunset: 1.0 - k, night: k };
+  }
+  const k = sstep(5.25, 6.5, hr);
+  return { sunset: Math.sin(k * Math.PI) * 0.72, night: 1.0 - k };
 }
 
 function renderFrame(t) {
@@ -341,6 +349,7 @@ function renderFrame(t) {
   gl.uniform1f(U.uFlowers, P.flowers);
   gl.uniform1f(U.uEdge, (P.warp - 36) * 0.45);
   gl.uniform1f(U.uSeed, SCENE_SEED);
+  gl.uniform1f(U.uSunset, sunsetMix);
   gl.uniform1f(U.uNight, nightMix);
   gl.uniform4f(U.uPond, pond.x, pond.y, pond.active ? pond.rx : 0, pond.active ? pond.ry : 0);
   gl.uniform4fv(U.uWindA, windRibbons.bufA);
@@ -375,12 +384,14 @@ function tick(now) {
     return;
   }
 
-  const targetNight = computeTargetNight();
-  if (!nightInitialized) {
-    nightMix = targetNight;
-    nightInitialized = true;
+  const targetMood = computeTargetMood();
+  if (!moodInitialized) {
+    sunsetMix = targetMood.sunset;
+    nightMix = targetMood.night;
+    moodInitialized = true;
   }
-  const nightChanging = Math.abs(targetNight - nightMix) > 0.002;
+  const moodChanging = Math.abs(targetMood.sunset - sunsetMix) > 0.002
+                    || Math.abs(targetMood.night - nightMix) > 0.002;
   // Smooth vsync-aligned 60 FPS on desktop (zero 30fps hitch); lighter 35 FPS in small preview iframe
   const targetInterval = isPreview ? 28 : 12;
   if (!needsInitialSettle && lastDraw && now - lastDraw < targetInterval) return;
@@ -391,9 +402,12 @@ function tick(now) {
   simTime += dt;
   flowTime += dt * Math.max(0.05, P.flow);
 
-  if (nightChanging) {
-    nightMix += (targetNight - nightMix) * Math.min(1, dt * 3.2);
-    if (Math.abs(targetNight - nightMix) < 0.002) nightMix = targetNight;
+  if (moodChanging) {
+    const k = Math.min(1, dt * 3.0);
+    sunsetMix += (targetMood.sunset - sunsetMix) * k;
+    nightMix += (targetMood.night - nightMix) * k;
+    if (Math.abs(targetMood.sunset - sunsetMix) < 0.002) sunsetMix = targetMood.sunset;
+    if (Math.abs(targetMood.night - nightMix) < 0.002) nightMix = targetMood.night;
   }
 
   if (curMix < 1.0) {
@@ -418,12 +432,11 @@ const bridge = createHostBridge({
       P[k] = num;
       if (k === 'sigma' || k === 'warp' || k === 'adaptive') fieldDirty = true;
       if (k === 'cover') cloudGrid.syncSkyClouds(P.cover, W, H);
-      if (k === 'timeMode' && !nightInitialized) {
-        nightMix = computeTargetNight();
-        nightInitialized = true;
-      }
-      if (k === 'timeMode' && paused) {
-        nightMix = computeTargetNight();
+      if (k === 'timeMode' && (!moodInitialized || paused)) {
+        const m = computeTargetMood();
+        sunsetMix = m.sunset;
+        nightMix = m.night;
+        moodInitialized = true;
       }
     }
     if (fieldDirty) commitField(false);

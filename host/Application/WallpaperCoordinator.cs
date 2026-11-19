@@ -367,7 +367,7 @@ namespace Scream.Application
             }
             var mCur = _store.GetEffectiveParams("meadow");
             double mMode = mCur.TryGetValue("timeMode", out var mv) ? mv : 0;
-            double mNext = Math.Round(mMode) == 1 ? 0 : 1;
+            double mNext = Math.Round(mMode) == 2 ? 0 : 2;
             _store.SetParam("meadow", "timeMode", mNext);
             ScheduleSave();
             foreach (var wf in _wallpapers) wf.SendSingleParam("timeMode", mNext);
@@ -400,7 +400,7 @@ namespace Scream.Application
         {
             string th = _store.Current.Theme;
             var tp = _store.GetEffectiveParams(th);
-            bool isNight = (th == "meadow" && tp.TryGetValue("timeMode", out var mt) && Math.Round(mt) == 1)
+            bool isNight = (th == "meadow" && tp.TryGetValue("timeMode", out var mt) && Math.Round(mt) == 2)
                         || (th == "castle" && tp.TryGetValue("timeMode", out var ct) && Math.Round(ct) == 2);
             _tray.SyncState(_store.Current.Lang, isNight, _manualPause, _store.Current.MultiMonitor);
         }

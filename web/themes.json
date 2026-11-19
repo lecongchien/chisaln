@@ -176,11 +176,11 @@
           "params": [
             {
               "key": "timeMode",
-              "label": { "vi": "Thời gian & Ánh trăng", "en": "Time & Moonlight" },
-              "hint": { "vi": "Chuyển giữa nắng ngày, đồng cỏ đêm ánh trăng hoặc tự động theo giờ máy", "en": "Switch between sunlit day, moonlit night meadow, or auto local time" },
+              "label": { "vi": "Thời gian trong ngày", "en": "Time of Day" },
+              "hint": { "vi": "Chuyển giữa nắng ngày, hoàng hôn chiều tà, đêm ánh trăng hoặc tự động theo giờ máy", "en": "Switch between sunlit day, golden-hour sunset, moonlit night, or auto local time" },
               "options": {
-                "vi": ["Ban ngày", "Ban đêm", "Tự động"],
-                "en": ["Day", "Night", "Auto"]
+                "vi": ["Ban ngày", "Hoàng hôn", "Ban đêm", "Tự động"],
+                "en": ["Day", "Sunset", "Night", "Auto"]
               },
               "default": 0
             },
