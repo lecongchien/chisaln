@@ -1,0 +1,368 @@
+{
+  "version": 1,
+  "themes": [
+    {
+      "id": "beach",
+      "page": "beach.html",
+      "status": "ready",
+      "name": {
+        "vi": "Bãi biển & Đảo cát",
+        "en": "Beach & Sand Islands"
+      },
+      "desc": {
+        "vi": "Đường bờ biển tự uốn quanh từng biểu tượng, sóng xô cát ướt cùng dừa, thuyền kayak và hải âu.",
+        "en": "Coastlines curve smoothly around your icons with rolling surf, wet sand, palms, kayaks, and seabirds."
+      },
+      "accent": "#0F766E",
+      "groups": [
+        {
+          "name": { "vi": "Bờ biển & Đảo cát", "en": "Shoreline & Islands" },
+          "params": [
+            {
+              "key": "sigma",
+              "label": { "vi": "Khoảng cách bờ", "en": "Shore Margin" },
+              "hint": { "vi": "Độ rộng bãi cát bao quanh từng icon", "en": "How far the sand shoreline extends around icons" },
+              "min": 42,
+              "max": 180,
+              "step": 1,
+              "default": 84,
+              "unit": "px"
+            },
+            {
+              "key": "warp",
+              "label": { "vi": "Độ uốn tự nhiên", "en": "Coastline Warp" },
+              "hint": { "vi": "Độ quanh co tự nhiên của đường mép nước", "en": "Organic irregularity along the shoreline contour" },
+              "min": 0,
+              "max": 75,
+              "step": 1,
+              "default": 34,
+              "unit": ""
+            }
+          ]
+        },
+        {
+          "name": { "vi": "Nước biển & Sóng", "en": "Ocean & Surf" },
+          "params": [
+            {
+              "key": "shoal",
+              "label": { "vi": "Bãi cạn trong suốt", "en": "Crystal Shoal" },
+              "hint": { "vi": "Độ rộng dải nước trong sát bờ cát", "en": "Width of the luminous pale-aqua shallows" },
+              "min": 0,
+              "max": 260,
+              "step": 2,
+              "default": 96,
+              "unit": "px"
+            },
+            {
+              "key": "shallow",
+              "label": { "vi": "Vùng nước ngọc", "en": "Turquoise Lagoon" },
+              "hint": { "vi": "Khoảng chuyển màu từ nước ngọc sang biển sâu", "en": "Transition distance from turquoise to deep teal" },
+              "min": 140,
+              "max": 640,
+              "step": 5,
+              "default": 350,
+              "unit": "px"
+            },
+            {
+              "key": "speed",
+              "label": { "vi": "Nhịp sóng", "en": "Wave Tempo" },
+              "hint": { "vi": "Tốc độ sóng đánh bờ và chuyển động bọt biển", "en": "Speed of shoreline surf and wave crests" },
+              "min": 0,
+              "max": 2.4,
+              "step": 0.05,
+              "default": 1.0,
+              "format": "times"
+            },
+            {
+              "key": "waves",
+              "label": { "vi": "Mật độ sóng", "en": "Wave Density" },
+              "hint": { "vi": "Số lượng gợn sóng kế tiếp nhau ngoài khơi", "en": "Frequency of incoming surf bands" },
+              "min": 0.5,
+              "max": 1.8,
+              "step": 0.05,
+              "default": 1.0,
+              "format": "times"
+            }
+          ]
+        },
+        {
+          "name": { "vi": "Cảnh vật sinh động", "en": "Coastal Life" },
+          "params": [
+            {
+              "key": "palms",
+              "label": { "vi": "Cây dừa ven đảo", "en": "Coconut Palms" },
+              "hint": { "vi": "Cây dừa đung đưa mọc trên các bãi cát trống", "en": "Swaying palms placed on clear dry sand" },
+              "min": 0,
+              "max": 10,
+              "step": 1,
+              "default": 5,
+              "unit": ""
+            },
+            {
+              "key": "kayaks",
+              "label": { "vi": "Thuyền kayak", "en": "Kayaks" },
+              "hint": { "vi": "Thuyền tự chèo lượn né các đảo biểu tượng", "en": "Kayaks steering organically around islands" },
+              "min": 0,
+              "max": 4,
+              "step": 1,
+              "default": 2,
+              "unit": ""
+            },
+            {
+              "key": "birds",
+              "label": { "vi": "Chim hải âu", "en": "Seabirds" },
+              "hint": { "vi": "Đàn hải âu chao liệng cùng bóng nhẹ trên biển", "en": "Soaring coastal gulls with soft shadows" },
+              "min": 0,
+              "max": 8,
+              "step": 1,
+              "default": 4,
+              "unit": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "meadow",
+      "page": "meadow.html",
+      "status": "ready",
+      "name": {
+        "vi": "Đồng cỏ & Mây",
+        "en": "Meadow & Clouds"
+      },
+      "desc": {
+        "vi": "Đồng cỏ màu nước nắng sớm, mây trắng bồng bềnh ôm lấy icon, thả bóng xanh mát cùng diều và mèo nhỏ.",
+        "en": "Sunlit painterly meadow with billowing clouds cradling your icons, soft green shadows, a kite runner, and a black kitten."
+      },
+      "accent": "#2E6F40",
+      "groups": [
+        {
+          "name": { "vi": "Mây quanh biểu tượng", "en": "Icon Clouds" },
+          "params": [
+            {
+              "key": "adaptive",
+              "label": { "vi": "Mây bọc icon", "en": "Adaptive Icon Clouds" },
+              "hint": { "vi": "Tự tạo cụm mây trắng đệm phía dưới các icon", "en": "Form soft cumulus clouds beneath desktop icons" },
+              "options": {
+                "vi": ["Tắt", "Bật"],
+                "en": ["Off", "On"]
+              },
+              "default": 1
+            },
+            {
+              "key": "sigma",
+              "label": { "vi": "Kích thước cụm mây", "en": "Cloud Halo Size" },
+              "hint": { "vi": "Độ nở rộng của đám mây xung quanh icon", "en": "How far clouds puff outward around icons" },
+              "min": 42,
+              "max": 180,
+              "step": 1,
+              "default": 74,
+              "unit": "px"
+            },
+            {
+              "key": "warp",
+              "label": { "vi": "Độ bồng bềnh", "en": "Cloud Puffiness" },
+              "hint": { "vi": "Độ gợn tròn tự nhiên ở rìa từng đám mây", "en": "Fluffy billow variation along cloud edges" },
+              "min": 0,
+              "max": 75,
+              "step": 1,
+              "default": 36,
+              "unit": ""
+            }
+          ]
+        },
+        {
+          "name": { "vi": "Bầu trời & Cỏ hoa", "en": "Sky & Meadow" },
+          "params": [
+            {
+              "key": "timeMode",
+              "label": { "vi": "Thời gian & Ánh trăng", "en": "Time & Moonlight" },
+              "hint": { "vi": "Chuyển giữa nắng ngày, đồng cỏ đêm ánh trăng hoặc tự động theo giờ máy", "en": "Switch between sunlit day, moonlit night meadow, or auto local time" },
+              "options": {
+                "vi": ["Ban ngày", "Ban đêm", "Tự động"],
+                "en": ["Day", "Night", "Auto"]
+              },
+              "default": 0
+            },
+            {
+              "key": "cover",
+              "label": { "vi": "Mây trôi tự do", "en": "Drifting Clouds" },
+              "hint": { "vi": "Mật độ mây trắng trôi ngang qua khoảng cỏ trống", "en": "Amount of free clouds gliding across open grass" },
+              "min": 0,
+              "max": 1,
+              "step": 0.02,
+              "default": 0.34,
+              "format": "percent"
+            },
+            {
+              "key": "flow",
+              "label": { "vi": "Tốc độ gió & mây", "en": "Breeze Speed" },
+              "hint": { "vi": "Tốc độ mây trôi, mây thở và gió thổi cánh diều", "en": "Speed of cloud drift, puff breathing, and wind" },
+              "min": 0,
+              "max": 2.5,
+              "step": 0.05,
+              "default": 1.0,
+              "format": "times"
+            },
+            {
+              "key": "flowers",
+              "label": { "vi": "Hoa dại trên cỏ", "en": "Wildflowers" },
+              "hint": { "vi": "Mật độ hoa cúc trắng và hoa vàng điểm xuyết", "en": "Density of small daisies and buttercups on grass" },
+              "min": 0,
+              "max": 1,
+              "step": 0.05,
+              "default": 0.55,
+              "format": "percent"
+            }
+          ]
+        },
+        {
+          "name": { "vi": "Nhân vật trên đồng cỏ", "en": "Meadow Friends" },
+          "params": [
+            {
+              "key": "showBoy",
+              "label": { "vi": "Cậu bé thả diều", "en": "Kite Runner" },
+              "hint": { "vi": "Cậu bé chạy thả diều trên khoảng cỏ trống", "en": "Animated boy flying a kite in an open clearing" },
+              "options": {
+                "vi": ["Ẩn", "Hiện"],
+                "en": ["Hide", "Show"]
+              },
+              "default": 1
+            },
+            {
+              "key": "showCat",
+              "label": { "vi": "Mèo đen nằm nắng", "en": "Black Kitten" },
+              "hint": { "vi": "Chú mèo đen cuộn tròn ve vẩy đuôi trên cỏ", "en": "Little black kitten relaxing on sunlit grass" },
+              "options": {
+                "vi": ["Ẩn", "Hiện"],
+                "en": ["Hide", "Show"]
+              },
+              "default": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "castle",
+      "page": "castle.html",
+      "status": "ready",
+      "name": {
+        "vi": "Lâu đài trên đồi gió",
+        "en": "Alpine Moving Castle"
+      },
+      "desc": {
+        "vi": "Thảo nguyên núi tuyết Alps phong cách Ghibli với lâu đài cơ khí bước đi nhả khói, nhà tranh tường đá và đàn cừu tự né icon.",
+        "en": "Studio Ghibli alpine meadow with snow-capped peaks, a walking steampunk castle, thatched cottage, shepherd, and icon-avoiding sheep flock."
+      },
+      "accent": "#46708A",
+      "groups": [
+        {
+          "name": { "vi": "Thảo nguyên & Biểu tượng", "en": "Alpine Icons" },
+          "params": [
+            {
+              "key": "adaptive",
+              "label": { "vi": "Thích ứng theo icon", "en": "Adaptive Icon Clearing" },
+              "hint": { "vi": "Mây núi bọc icon trên trời, lối đất ấm & đàn cừu né icon trên đồi", "en": "Soft sky clouds for upper icons and warm meadow clearings on the hillside" },
+              "options": {
+                "vi": ["Tắt", "Bật"],
+                "en": ["Off", "On"]
+              },
+              "default": 1
+            },
+            {
+              "key": "sigma",
+              "label": { "vi": "Vùng đệm quanh icon", "en": "Clearing Radius" },
+              "hint": { "vi": "Độ rộng vùng mây hoặc khoảng đất trống quanh biểu tượng", "en": "Extent of cloud halos and hillside clearings around icons" },
+              "min": 40,
+              "max": 160,
+              "step": 1,
+              "default": 70,
+              "unit": "px"
+            },
+            {
+              "key": "warp",
+              "label": { "vi": "Độ uốn tự nhiên", "en": "Edge Organic Warp" },
+              "hint": { "vi": "Độ mềm tự nhiên của viền mây và khoảng cỏ", "en": "Natural contour irregularity along clearings" },
+              "min": 0,
+              "max": 75,
+              "step": 1,
+              "default": 32,
+              "unit": ""
+            }
+          ]
+        },
+        {
+          "name": { "vi": "Bầu trời & Thời tiết", "en": "Sky & Atmosphere" },
+          "params": [
+            {
+              "key": "timeMode",
+              "label": { "vi": "Thời gian trong ngày", "en": "Time of Day" },
+              "hint": { "vi": "Nắng Alps ban ngày, hoàng hôn rực rỡ, đêm trăng sao hoặc tự động", "en": "Alpine daylight, golden alpenglow sunset, starlit night, or auto clock" },
+              "options": {
+                "vi": ["Ngày", "Hoàng hôn", "Đêm sao", "Tự động"],
+                "en": ["Day", "Sunset", "Night", "Auto"]
+              },
+              "default": 0
+            },
+            {
+              "key": "mist",
+              "label": { "vi": "Biển mây sườn núi", "en": "Valley Mist" },
+              "hint": { "vi": "Độ dày làn mây trắng cuộn trôi ngang dãy núi tuyết", "en": "Density of billowing alpine clouds across the lower peaks" },
+              "min": 0,
+              "max": 1,
+              "step": 0.02,
+              "default": 0.72,
+              "format": "percent"
+            },
+            {
+              "key": "flow",
+              "label": { "vi": "Tốc độ gió thảo nguyên", "en": "Alpine Breeze" },
+              "hint": { "vi": "Tốc độ sóng cỏ, mây núi, khói ống khói và vệt gió thoảng", "en": "Speed of hillside grass waves, valley mist, smoke, and wind gusts" },
+              "min": 0,
+              "max": 2.4,
+              "step": 0.05,
+              "default": 1.0,
+              "format": "times"
+            }
+          ]
+        },
+        {
+          "name": { "vi": "Lâu đài & Đàn cừu", "en": "Castle & Flock" },
+          "params": [
+            {
+              "key": "showCastle",
+              "label": { "vi": "Lâu đài di động", "en": "Moving Castle" },
+              "hint": { "vi": "Hiện hoặc ẩn lâu đài cơ khí bước đi dọc sống đồi", "en": "Show or hide the walking steampunk castle along the ridge" },
+              "options": {
+                "vi": ["Ẩn", "Hiện"],
+                "en": ["Hide", "Show"]
+              },
+              "default": 1
+            },
+            {
+              "key": "castleSpeed",
+              "label": { "vi": "Nhịp bước lâu đài", "en": "Castle Stride" },
+              "hint": { "vi": "Tốc độ bước đi của 4 chân sắt trên sườn núi (0 = đứng ngắm cảnh)", "en": "Walking pace of the mechanical iron legs along the crest" },
+              "min": 0,
+              "max": 2.2,
+              "step": 0.05,
+              "default": 1.0,
+              "format": "times"
+            },
+            {
+              "key": "sheep",
+              "label": { "vi": "Số lượng đàn cừu", "en": "Sheep Flock" },
+              "hint": { "vi": "Đàn cừu trắng gặm cỏ tự đi quanh người chăn cừu và né icon", "en": "Fluffy white sheep grazing around the shepherd and steering clear of icons" },
+              "min": 0,
+              "max": 34,
+              "step": 1,
+              "default": 22,
+              "unit": ""
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

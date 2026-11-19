@@ -1,0 +1,19 @@
+# .NET / Visual Studio build outputs
+bin/
+obj/
+.vs/
+*.user
+*.suo
+*.cache
+*.log
+
+# WebView2 runtime / local user profile data
+*.WebView2/
+EBWebView/
+
+# OS / Editor junk
+.DS_Store
+Thumbs.db
+desktop.ini
+*.tmp
+*.bak
