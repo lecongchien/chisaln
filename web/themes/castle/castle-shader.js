@@ -32,10 +32,13 @@ uniform float uMist;
 uniform float uSunset;
 uniform float uNight;
 uniform float uGust;
+uniform float uMoonOcc;
+uniform float uMoonVis;
 uniform float uAlpsReady;
 uniform float uSeed;
 
 uniform vec4 uCastleRect;
+uniform vec4 uWindFronts[3];
 uniform vec4 uWindA[4];
 uniform vec4 uWindB[4];
 uniform vec4 uWindC[4];
@@ -72,23 +75,22 @@ float hillsideRidgeY(float nx, float H) {
   return (slope + gentleUndul) * H;
 }
 
-// Sculpted billowing Studio Ghibli cumulus clouds (broad 140-320px cauliflower domes + crisp sunlit tops!)
+// Sculpted billowing Studio Ghibli cumulus clouds (3 texture fetches instead of 5, early-out when empty!)
 // Returns vec2(alpha, sunlitTopFactor)
 vec2 ghibliCloudField(vec2 p, float scaleX, float scaleY, float driftX, float coverage) {
+  if (coverage <= 0.015) return vec2(0.0);
   vec2 q = vec2(p.x - driftX, p.y) * vec2(1.0 / scaleX, 1.0 / scaleY);
-  // uNoise.r has 6 cyc/UV -> q * 1.0 spans 6 broad domes per scale unit; multiply by 0.22 -> ~1.3 huge domes per scale!
-  float d1 = N(q * 56.0, 256.0).r;
+  vec4 t1 = N(q * 56.0, 256.0);
   float d2 = N(q * 112.0 + vec2(41.0, 19.0), 256.0).r;
-  float d3 = N(q * 94.0 + vec2(83.0, 63.0), 256.0).g;
-  // Plump rounded dome profile (soft cauliflower billows)
-  float shape = d1 * 0.56 + d2 * 0.30 + d3 * 0.14;
-
-  // Directional probe up-left for crisp Studio Ghibli sunlit cloud crown vs cool lavender belly
-  vec2 qLit = q + vec2(-0.18, -0.26);
-  float shapeLit = N(qLit * 56.0, 256.0).r * 0.62 + N(qLit * 112.0 + vec2(41.0, 19.0), 256.0).r * 0.38;
+  float shape = t1.r * 0.56 + d2 * 0.30 + t1.g * 0.14;
 
   float thresh = 1.0 - coverage;
   float alpha = ss(thresh - 0.045, thresh + 0.055, shape);
+  if (alpha <= 0.004) return vec2(0.0);
+
+  // Single directional up-left probe for crisp Studio Ghibli sunlit crown vs shaded belly
+  vec2 qLit = q + vec2(-0.18, -0.26);
+  float shapeLit = N(qLit * 56.0, 256.0).r * 0.72 + t1.g * 0.28;
   float rim = ss(-0.10, 0.11, shape - shapeLit) * 0.68 + ss(thresh, thresh + 0.24, shape) * 0.32;
   return vec2(alpha, clamp(rim, 0.0, 1.0));
 }
@@ -98,62 +100,112 @@ vec2 ghibliCloudField(vec2 p, float scaleX, float scaleY, float driftX, float co
 vec2 skyCloudAt(vec2 pos, vec2 cssRes, float wt, float mist, float night) {
   float nyPos = pos.y / max(1.0, cssRes.y);
   float hiBand = 1.0 - ss(0.26, 0.50, nyPos);
-  // Subtle extra lunar-altitude coverage at night so clouds gracefully cross the full moon
   float cov = mix(0.46, 0.52, night) * hiBand * (0.52 + 0.48 * mist);
   return ghibliCloudField(pos, 380.0, 210.0, wt * 13.5, cov);
 }
 
-// Rolling Studio Ghibli grass-wind waves sweeping across the ENTIRE hillside!
-// Returns vec2(sunlitCrest, bowedShadowTrough) for authentic Miyazaki wind-river contrast
-vec2 alpineWindWave(vec2 p, float wt, float gust) {
-  vec2 d1 = -WIND_DIR * (wt * 68.0);
-  vec2 d2 = -WIND_DIR * (wt * 108.0) + WIND_PERP * (wt * 14.0);
-  float f1 = N(p + d1, 1380.0).r;
-  float f2 = N(p + d2, 740.0).r;
-  float along = dot(p, WIND_DIR) + (f1 - 0.5) * 440.0 + (f2 - 0.5) * 145.0;
-  float s1 = sin(along * 0.0068 - wt * 1.95);
-  float s2 = sin(along * 0.0132 - wt * 2.85 + f1 * 2.6);
-  float waveVal = s1 * 0.64 + s2 * 0.36;
-  float gustMask = ss(0.16, 0.84, f1 * 0.62 + f2 * 0.38);
-  float gAmp = 0.66 + 0.56 * gust;
-  float crest  = clamp(pow(max(0.0,  waveVal * 0.5 + 0.5), 1.32) * (0.44 + 0.56 * gustMask) * gAmp, 0.0, 1.0);
-  float trough = clamp(pow(max(0.0, -waveVal * 0.5 + 0.5), 1.62) * (0.36 + 0.64 * gustMask) * (0.58 + 0.42 * gust), 0.0, 1.0);
-  return vec2(crest, trough);
+// 3-Tier Depth-Layered Cascade Hillside Wind (Studio Ghibli Multiplane Parallax!)
+// Optimized: 3 total noise fetches outside the loop (was 9 inside loop!)
+vec2 layeredHillsideWind(vec2 p, float nx, float hillDepth, float wt, float gust) {
+  float perspDepth = pow(clamp(hillDepth, 0.0, 1.0), 0.72);
+  float c1 = N(p * vec2(0.42, 1.35), 1180.0).r - 0.5;
+  float c2 = N(p * vec2(0.78, 1.85) + vec2(93.0, 41.0), 620.0).g - 0.5;
+  float terraceStep = sin(perspDepth * 9.4248) * 0.022;
+  float cascadeS = perspDepth * 0.74 + nx * 0.36 + c1 * 0.145 + c2 * 0.052 + terraceStep;
+
+  // Shared cross-wind organic breakup sampled ONCE (shifted analytically per front!)
+  float basePatch = N(p + vec2(-wt * 26.0, 31.0), 760.0).r;
+
+  float crest  = 0.0;
+  float trough = 0.0;
+
+  for (int i = 0; i < 3; i++) {
+    vec4 wf = uWindFronts[i];
+    if (wf.z <= 0.005) continue;
+
+    float wLoc = wf.y * (0.58 + 0.85 * hillDepth);
+    float frontCurve = sin(nx * 5.2 + wf.w + c1 * 2.4) * 0.036;
+    float d = (cascadeS + frontCurve - wf.x) / max(0.022, wLoc);
+    if (d < -2.6 || d > 1.8) continue;
+
+    float leadCrest   = exp(-pow((d - 0.16) / 0.58, 2.0));
+    float trailTrough = exp(-pow((d + 0.72) / 0.84, 2.0));
+    float rebound     = exp(-pow((d + 1.62) / 0.62, 2.0)) * 0.30;
+
+    float patchM = 0.42 + 0.58 * ss(0.14, 0.84, fract(basePatch + wf.w * 0.13 + sin(p.y * 0.006 + wf.w) * 0.12));
+    float amp = wf.z * patchM;
+
+    crest  = max(crest,  (leadCrest + rebound) * amp);
+    trough = max(trough, trailTrough * amp);
+  }
+
+  float ambScale = mix(0.015, 0.0062, hillDepth);
+  float ambAlong = dot(p, WIND_DIR) * ambScale + c1 * 3.8;
+  float ambWave  = 0.5 + 0.5 * sin(ambAlong - wt * (1.25 + 0.45 * hillDepth));
+  float ambCrest = pow(ambWave, 1.8) * (0.45 + 0.55 * basePatch) * (0.14 + 0.10 * gust);
+
+  return vec2(clamp(crest * 1.08 + ambCrest, 0.0, 1.0), clamp(trough * 1.04, 0.0, 1.0));
 }
 
-// Expressive perspective-scaled Kazuo Oga grass strokes bowing deeply in gusts (3x3 100% seamless!)
+// Organic Kazuo Oga upright fanned grass tufts (\ | /) curving gracefully in wind (2x2 clip-free, ZERO hair!)
 vec2 hillsideGrassStrokes(vec2 p, float wt, float windCrest, float gust, float hillDepth) {
-  const vec2 G = vec2(18.0, 12.0);
-  vec2 c0 = floor(p / G);
+  if (hillDepth < 0.18) return vec2(0.0);
+  float depthFade = ss(0.18, 0.54, hillDepth);
+  const vec2 G = vec2(26.0, 18.0);
+  // Shifted 2x2 search guarantees zero clipping for tufts reaching up to 19px tall & 23px downwind
+  vec2 c0 = floor((p + vec2(-5.0, 6.5)) / G - 0.5);
   float shade = 0.0;
   float hi = 0.0;
-  float persp = 0.68 + 0.58 * hillDepth;
-  for (int jy = -1; jy <= 1; jy++) {
-    for (int jx = -1; jx <= 1; jx++) {
+  float persp = 0.54 + 0.72 * hillDepth;
+
+  for (int jy = 0; jy <= 1; jy++) {
+    for (int jx = 0; jx <= 1; jx++) {
       vec2 c = c0 + vec2(float(jx), float(jy));
       float h1 = hash2(c + 5.7);
       vec2 cp = (c + 0.5) * G;
-      float dens = (0.42 + 0.44 * hillDepth) * ss(0.18, 0.72, N(cp, 840.0).r) + 0.14;
+      float clumpN = N(cp * vec2(0.65, 1.15), 760.0).r;
+      float dens = (0.30 + 0.62 * ss(0.26, 0.74, clumpN)) * ss(0.18, 0.45, hillDepth);
       if (h1 > dens) continue;
 
       float h2 = hash2(c + 13.1);
       float h3 = hash2(c + 29.4);
-      vec2 root = cp + (vec2(h2, h3) - 0.5) * vec2(10.0, 6.0);
+      float h4 = hash2(c + 47.9);
+      vec2 root = (c + vec2(0.22 + 0.56 * h2, 0.22 + 0.56 * h3)) * G;
       vec2 rel = p - root;
-      if (abs(rel.x) > 17.5 || abs(rel.y) > 10.5) continue;
+      if (rel.x < -12.0 || rel.x > 22.0 || rel.y < -18.5 || rel.y > 3.5) continue;
 
-      float localG = clamp(windCrest * (0.82 + 0.45 * h2) + gust * 0.24, 0.0, 1.35);
-      float flut = sin(wt * (3.4 + h3 * 1.8) + h2 * 6.283 + root.x * 0.04) * (0.85 + localG * 1.25);
-      float reach = min(15.8, (4.8 + h3 * 4.0 + localG * 6.4 + flut) * persp);
-      float liftY = clamp((-2.6 + localG * 1.8) * persp, -5.5, 2.5);
-      vec2 tip = WIND_DIR * reach + vec2(0.0, liftY);
-      vec2 pa = rel;
-      float tSeg = clamp(dot(pa, tip) / max(dot(tip, tip), 1e-4), 0.0, 1.0);
-      float dSeg = length(pa - tip * tSeg);
-      float thick = mix(1.02, 0.30, tSeg) * (0.82 + 0.30 * hillDepth);
-      float m = (1.0 - ss(thick * 0.38, thick + 0.55, dSeg)) * (0.42 + 0.36 * h3);
-      shade = max(shade, m * (1.0 - tSeg * 0.48));
-      hi = max(hi, m * ss(0.40, 0.94, tSeg) * ss(0.22, 0.88, localG));
+      float baseH = min(15.2, (6.0 + 5.4 * h4 * h4) * persp);
+      float localW = clamp(windCrest * (0.78 + 0.44 * h2) + gust * 0.12, 0.0, 1.20);
+      float flut = sin(wt * (3.0 + h3 * 1.6) + h2 * 6.283 + root.x * 0.03) * (0.05 + localW * 0.13);
+      float bend = clamp(0.10 + localW * 0.62 + flut, -0.05, 0.85);
+      float tuftAlpha = depthFade * (0.48 + 0.44 * h4);
+      int bCount = h4 > 0.34 ? 3 : 2;
+
+      for (int k = 0; k < 3; k++) {
+        if (k >= bCount) break;
+        float lean0 = (k == 0 ? -0.50 : (k == 1 ? -0.02 : 0.46)) + (h2 - 0.5) * 0.26;
+        float hSc   = (k == 0 ?  0.72 : (k == 1 ?  1.00 : 0.82)) + (h3 - 0.5) * 0.16;
+        float ox    = (k == 0 ? -1.55 : (k == 1 ?  0.00 : 1.45)) * persp;
+        float stiff = (k == 0 ?  0.84 : (k == 1 ?  1.12 : 0.96));
+        float wSc   = (k == 0 ?  0.82 : (k == 1 ?  0.96 : 0.86));
+
+        float bh = clamp(baseH * hSc, 2.2, 16.5);
+        float bBend = bend * stiff;
+        float uRaw = -rel.y / bh;
+        float u = clamp(uRaw, 0.0, 1.0);
+        float curveX = (lean0 * u + bBend * u * u) * bh;
+        float slope = lean0 + 2.0 * bBend * u;
+        float dx = ((rel.x - ox) - curveX) * inversesqrt(1.0 + slope * slope);
+        float capY = max(0.0, -uRaw) * bh + max(0.0, uRaw - 1.0) * bh;
+        float dist = length(vec2(dx, capY));
+
+        float taper = u * (1.22 - 0.22 * u);
+        float thick = (0.92 * (1.0 - 0.78 * taper)) * (0.72 + 0.36 * hillDepth) * wSc;
+        float rootMerge = ss(0.0, 0.16, u);
+        float m = (1.0 - ss(thick * 0.25, thick + 0.55, dist)) * tuftAlpha;
+        shade = max(shade, m * (1.0 - ss(0.28, 0.78, u)) * (0.55 + 0.45 * rootMerge));
+        hi    = max(hi,    m * ss(0.26, 0.88, u));
+      }
     }
   }
   return vec2(shade, hi);
@@ -245,10 +297,10 @@ float ghibliWindRibbons(vec2 p) {
 vec3 alpineFireflies(vec2 p, float time, float nightAmt) {
   if (nightAmt < 0.03) return vec3(0.0);
   const float CELL = 148.0;
-  vec2 baseCell = floor(p / CELL);
+  vec2 baseCell = floor(p / CELL - 0.5);
   vec3 glow = vec3(0.0);
-  for (int jy = -1; jy <= 1; jy++) {
-    for (int jx = -1; jx <= 1; jx++) {
+  for (int jy = 0; jy <= 1; jy++) {
+    for (int jx = 0; jx <= 1; jx++) {
       vec2 c = baseCell + vec2(float(jx), float(jy));
       float h1 = hash2(c + 23.7);
       if (h1 < 0.60) continue;
@@ -290,22 +342,12 @@ void main() {
   float dRidge = p.y - ridgeY;
 
   // =========================================================================
-  // 1. ALPINE SKY, STARS, FULL MOON + REAL-TIME CLOUD-OCCLUSION OPTICS
+  // 1. ALPINE SKY, STARS, FULL MOON + CPU-PRECOMPUTED CLOUD-OCCLUSION OPTICS
   // =========================================================================
   vec2 moonPos = vec2(cssRes.x * 0.80, cssRes.y * 0.14);
   float mRad = clamp(min(cssRes.x, cssRes.y) * 0.044, 24.0, 44.0);
-
-  // Sample drifting sky clouds directly across the Full Moon's face (3-point smooth eclipse!)
-  float moonOcc = 0.0;
-  float moonVis = 1.0;
-  if (night > 0.02) {
-    float cM0 = skyCloudAt(moonPos, cssRes, wt, uMist, night).x;
-    float cML = skyCloudAt(moonPos + vec2(-mRad * 0.65, 0.0), cssRes, wt, uMist, night).x;
-    float cMR = skyCloudAt(moonPos + vec2( mRad * 0.65, 0.0), cssRes, wt, uMist, night).x;
-    moonOcc = clamp(cM0 * 0.50 + cML * 0.25 + cMR * 0.25, 0.0, 1.0);
-    // 1.0 = clear radiant full moon; 0.22 = softly veiled behind thick drifting cloud
-    moonVis = 1.0 - moonOcc * 0.78;
-  }
+  float moonOcc = clamp(uMoonOcc, 0.0, 1.0);
+  float moonVis = clamp(uMoonVis, 0.15, 1.0);
 
   vec3 skyTopDay = vec3(0.285, 0.640, 0.865);
   vec3 skyBotDay = vec3(0.745, 0.895, 0.960);
@@ -436,15 +478,22 @@ void main() {
     }
 
     // Sculpted billowing Studio Ghibli cumulus cloud-sea hugging the lower right mountain flank!
-    float mistBand = exp(-pow((p.y - (ridgeY - cssRes.y * 0.015)) / (cssRes.y * 0.20), 2.0));
-    float rightBias = ss(0.10, 0.58, nx) * 0.78 + 0.22;
-    float cov = clamp(mistBand * rightBias * uMist * 1.18, 0.0, 0.92);
-    vec2 vc1 = ghibliCloudField(p + vec2(0.0, 22.0), 320.0, 185.0, wt * 14.0, cov * 0.88);
-    vec2 vc2 = ghibliCloudField(p + vec2(145.0, -10.0), 210.0, 128.0, wt * 21.0, cov * 0.76);
-    float vcAlpha = clamp(max(vc1.x * 0.94, vc2.x * 0.88), 0.0, 0.96);
-    float vcLit = vc2.x > vc1.x ? vc2.y : vc1.y;
-    vec3 vCloudCol = mix(cShdCol, cLitCol, ss(0.24, 0.72, vcLit + (g1 - 0.5) * 0.05));
-    col = mix(col, vCloudCol, vcAlpha);
+    // Early-out in clear high sky to skip redundant cloud fetches!
+    if (uMist > 0.02 && p.y > ridgeY - cssRes.y * 0.44) {
+      float mistBand = exp(-pow((p.y - (ridgeY - cssRes.y * 0.015)) / (cssRes.y * 0.20), 2.0));
+      float rightBias = ss(0.10, 0.58, nx) * 0.78 + 0.22;
+      float cov = clamp(mistBand * rightBias * uMist * 1.18, 0.0, 0.92);
+      if (cov > 0.02) {
+        vec2 vc1 = ghibliCloudField(p + vec2(0.0, 22.0), 320.0, 185.0, wt * 14.0, cov * 0.88);
+        vec2 vc2 = ghibliCloudField(p + vec2(145.0, -10.0), 210.0, 128.0, wt * 21.0, cov * 0.76);
+        float vcAlpha = clamp(max(vc1.x * 0.94, vc2.x * 0.88), 0.0, 0.96);
+        if (vcAlpha > 0.004) {
+          float vcLit = vc2.x > vc1.x ? vc2.y : vc1.y;
+          vec3 vCloudCol = mix(cShdCol, cLitCol, ss(0.24, 0.72, vcLit + (g1 - 0.5) * 0.05));
+          col = mix(col, vCloudCol, vcAlpha);
+        }
+      }
+    }
   }
 
   // Adaptive soft sculpted cloud cushions wrapping icons in the sky region
@@ -484,10 +533,11 @@ void main() {
   }
 
   // =========================================================================
-  // 4. KAZUO OGA GOUACHE SLOPING ALPINE HILLSIDE — WIND + MOONLIGHT OPTICS!
+  // 4. KAZUO OGA GOUACHE SLOPING ALPINE HILLSIDE — 3-TIER LAYERED WIND + MOON!
   // =========================================================================
   float gustAmt = clamp(uGust, 0.0, 1.0);
-  vec2 windW = alpineWindWave(p, wt, gustAmt);
+  float rawHillDepth = clamp(dRidge / max(80.0, cssRes.y * 0.55), 0.0, 1.0);
+  vec2 windW = dRidge > -10.0 ? layeredHillsideWind(p, nx, rawHillDepth, wt, gustAmt) : vec2(0.0);
   float windWave = windW.x;
   float windTrough = windW.y;
 
@@ -502,11 +552,11 @@ void main() {
   }
 
   if (dRidge > -6.0) {
-    // Organic wind-rippled tufted grass skyline lip right along the ridge crest!
-    float crestWave = sin(p.x * 0.018 - wt * 2.4) * (1.1 + gustAmt * 1.6);
+    // Organic wind-rippled tufted grass skyline lip reacting right as Tier 1 crosses the distant ridge!
+    float crestWave = sin(p.x * 0.022 - wt * 2.5) * (0.9 + windWave * 2.6);
     float crestJit = (N(vec2(p.x * 1.4 - wt * 14.0, 17.0), 48.0).g - 0.5) * 4.8 + crestWave + (g2 - 0.5) * 1.4;
     float hillMask = ss(-1.6, 1.6, dRidge + crestJit);
-    float hillDepth = clamp(dRidge / max(80.0, cssRes.y * 0.55), 0.0, 1.0);
+    float hillDepth = rawHillDepth;
 
     vec3 gCrestDay = vec3(0.730, 0.848, 0.405);
     vec3 gMidDay   = vec3(0.475, 0.715, 0.310);
@@ -547,15 +597,16 @@ void main() {
     vec3 stoneCol = mix(mix(vec3(0.74, 0.76, 0.71), vec3(0.72, 0.60, 0.54), sunset), vec3(0.26, 0.35, 0.44) * mix(0.62, 1.24, hillMoonLit), night);
     hillCol = mix(hillCol, stoneCol, rockSpot * 0.58);
 
-    // Anisotropic wind-combed gouache grass carpet visibly flexing in rolling gusts!
-    vec2 windUV = vec2(dot(p, WIND_DIR) * 0.24, dot(p, WIND_PERP) * 1.55);
-    vec2 shift = vec2(-windWave * 14.5 - sin(wt * 2.15 + windUV.y * 0.022) * (1.4 + gustAmt * 2.1), windWave * 2.8);
-    float turfA = N(windUV + shift, 190.0).g;
-    float turfB = N(windUV * 1.85 + shift * 1.35 + vec2(41.0, 17.0), 104.0).a;
+    // Silky Kazuo Oga wind-combed gouache grass carpet (calibrated for uNoise .g/.a -> lush brushwork!)
+    vec2 windUV = vec2(dot(p, WIND_DIR) * (0.34 + 0.14 * (1.0 - hillDepth)), dot(p, WIND_PERP) * (1.42 + 0.45 * (1.0 - hillDepth)));
+    vec2 shift = vec2(-windWave * (11.0 + 12.0 * hillDepth) - sin(wt * 1.9 + windUV.y * 0.018) * (1.1 + windWave * 1.6), windWave * (1.6 + 1.6 * hillDepth));
+    float turfA = N(windUV + shift, 760.0).g;
+    float turfB = N(windUV * 1.38 + shift * 1.25 + vec2(41.0, 17.0), 560.0).a;
     float combed = turfA * 0.58 + turfB * 0.42;
 
-    hillCol = mix(hillCol, gDeep * 0.80, (windTrough * 0.68 + ss(0.52, 0.16, combed) * 0.38) * mix(0.42, 0.34, night));
-    hillCol = mix(hillCol, gGust, (windWave * 0.68 + ss(0.46, 0.84, combed) * 0.42) * mix(0.50, 0.40 * hillMoonLit + 0.10, night));
+    // Distinct leading sunlit wave crest + deep pressed emerald trailing trough per wind tier!
+    hillCol = mix(hillCol, gDeep * 0.78, (windTrough * 0.74 + ss(0.52, 0.18, combed) * 0.28) * mix(0.42, 0.36, night));
+    hillCol = mix(hillCol, gGust, (windWave * 0.78 + ss(0.52, 0.86, combed) * 0.28) * mix(0.52, 0.44 * hillMoonLit + 0.10, night));
 
     // Soft rolling sunlit pastoral dirt path sweeping naturally near lower-left cottage lane
     float pathCurveY = ridgeY + cssRes.y * (0.295 - 0.045 * sin(nx * 4.2));
@@ -587,10 +638,15 @@ void main() {
       hillCol = mix(hillCol, clearCol, clearM * 0.54);
     }
 
-    // Crisp swaying painted grass blades bending vigorously with the passing gust!
-    vec2 strokes = hillsideGrassStrokes(p, wt, windWave, gustAmt, hillDepth);
-    hillCol = mix(hillCol, gInk, strokes.x * mix(0.44, 0.46, night));
-    hillCol = mix(hillCol, gGust * 1.12, strokes.y * mix(0.42, 0.48 * hillMoonLit + 0.12, night));
+    // Organic upright fanned grass tufts melting naturally out of the hillside (parting around dirt lane & rocks!)
+    float tuftZone = (1.0 - pathMask * 0.88) * (1.0 - rockSpot * 0.85);
+    if (tuftZone > 0.04 && hillDepth >= 0.18) {
+      vec2 strokes = hillsideGrassStrokes(p, wt, windWave, gustAmt, hillDepth) * tuftZone;
+      vec3 tuftRootCol = hillCol * mix(vec3(0.74, 0.81, 0.76), vec3(0.72, 0.78, 0.84), night);
+      vec3 tuftTipCol  = mix(hillCol, gGust * 1.05, mix(0.72, 0.56 * hillMoonLit + 0.16, night));
+      hillCol = mix(hillCol, tuftRootCol, strokes.x * mix(0.54, 0.50, night));
+      hillCol = mix(hillCol, tuftTipCol,  strokes.y * mix(0.60, 0.56 * hillMoonLit + 0.18, night));
+    }
 
     // Grounded contact + directional nocturnal moon shadow stretching down-left behind Moving Castle!
     if (uCastleRect.z > 1.0) {
@@ -638,18 +694,19 @@ void main() {
 
   // =========================================================================
   // 5. FOREGROUND HILLSIDE OVERLAY: HAND-PAINTED COTTAGE, SHEPHERD & SHEEP!
+  //    (Cropped strictly to lower hillside band ny >= 0.38 for 4.5x less upload!)
   // =========================================================================
-  vec2 screenUV = p / max(cssRes, vec2(1.0));
-  vec4 fg = texture(uFieldTex, screenUV);
-  if (fg.a > 0.005) {
-    float warmLight = ss(0.26, 0.50, fg.r - fg.b) * ss(0.76, 0.95, fg.r) * ss(0.55, 0.82, fg.g);
-    vec3 fgSun = fg.rgb * vec3(1.05, 0.88, 0.74);
-    // Cottage, shepherd & sheep naturally brighten in clear moonlight & dim when clouds cross the moon,
-    // while warm cottage hearth candlelight glows EVEN WARMER in the moon-cloud shadow!
-    vec3 fgNgt = fg.rgb * vec3(0.45, 0.58, 0.78) * mix(0.62, 1.18, hillMoonLit) + vec3(0.012, 0.022, 0.046);
-    vec3 fgCol = mix(mix(fg.rgb, fgSun, sunset), fgNgt, night);
-    fgCol = mix(fgCol, fg.rgb * (1.12 + 0.16 * (1.0 - hillMoonLit) * night), warmLight * max(sunset * 0.7, night));
-    col = mix(col, fgCol, fg.a);
+  if (ny >= 0.38) {
+    vec2 fgUV = vec2(nx, (ny - 0.38) / 0.62);
+    vec4 fg = texture(uFieldTex, fgUV);
+    if (fg.a > 0.005) {
+      float warmLight = ss(0.26, 0.50, fg.r - fg.b) * ss(0.76, 0.95, fg.r) * ss(0.55, 0.82, fg.g);
+      vec3 fgSun = fg.rgb * vec3(1.05, 0.88, 0.74);
+      vec3 fgNgt = fg.rgb * vec3(0.45, 0.58, 0.78) * mix(0.62, 1.18, hillMoonLit) + vec3(0.012, 0.022, 0.046);
+      vec3 fgCol = mix(mix(fg.rgb, fgSun, sunset), fgNgt, night);
+      fgCol = mix(fgCol, fg.rgb * (1.12 + 0.16 * (1.0 - hillMoonLit) * night), warmLight * max(sunset * 0.7, night));
+      col = mix(col, fgCol, fg.a);
+    }
   }
 
   // =========================================================================

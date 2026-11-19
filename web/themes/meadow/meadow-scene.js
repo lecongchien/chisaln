@@ -10,7 +10,8 @@ import {
   createShaderProgram,
   createFieldTexture,
   uploadFieldTexture,
-  createSeamlessNoiseTexture
+  createSeamlessNoiseTexture,
+  computeRenderDpr
 } from '../../core/field-engine.js';
 import { createHostBridge } from '../../core/host-bridge.js';
 import { MEADOW_FS } from './meadow-shader.js';
@@ -37,6 +38,7 @@ const sstep = (a, b, x) => {
   return t * t * (3 - 2 * t);
 };
 
+const isPreview = new URLSearchParams(location.search).get('preview') === '1';
 const glCanvas = document.getElementById('gl');
 const demoContainer = document.getElementById('demo-icons');
 
@@ -45,8 +47,8 @@ const gl = glCanvas.getContext('webgl2', {
   alpha: false,
   depth: false,
   stencil: false,
-  preserveDrawingBuffer: true,
-  powerPreference: 'low-power'
+  preserveDrawingBuffer: false,
+  powerPreference: 'default'
 });
 
 if (!gl) {
@@ -219,7 +221,7 @@ function relocateCharacters(snap = false) {
 function allocResources() {
   W = Math.max(1, window.innerWidth);
   H = Math.max(1, window.innerHeight);
-  dpr = Math.min(2, window.devicePixelRatio || 1);
+  dpr = computeRenderDpr(W, H, isPreview);
 
   glCanvas.width = Math.round(W * dpr);
   glCanvas.height = Math.round(H * dpr);
@@ -379,11 +381,11 @@ function tick(now) {
     nightInitialized = true;
   }
   const nightChanging = Math.abs(targetNight - nightMix) > 0.002;
-  const highMotion = curMix < 1.0 || nightChanging || kiteBoy.isHighMotion() || kitten.isHighMotion();
-  const targetInterval = highMotion ? 16 : 22;
+  // Smooth vsync-aligned 60 FPS on desktop (zero 30fps hitch); lighter 35 FPS in small preview iframe
+  const targetInterval = isPreview ? 28 : 12;
   if (!needsInitialSettle && lastDraw && now - lastDraw < targetInterval) return;
 
-  const dt = lastRaf ? Math.min(0.1, (now - lastRaf) / 1000) : 0.033;
+  const dt = lastRaf ? Math.min(0.05, (now - lastRaf) / 1000) : 0.0167;
   lastRaf = now;
   lastDraw = now;
   simTime += dt;

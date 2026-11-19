@@ -10,12 +10,14 @@ import {
   createShaderProgram,
   createFieldTexture,
   uploadFieldTexture,
-  createSeamlessNoiseTexture
+  createSeamlessNoiseTexture,
+  sampleSeamlessNoise,
+  computeRenderDpr
 } from '../../core/field-engine.js';
 import { createHostBridge } from '../../core/host-bridge.js';
 import { createWindRibbonSystem } from '../meadow/meadow-wind.js';
 import { CASTLE_FS } from './castle-shader.js';
-import { createCastleWalker } from './castle-walker.js';
+import { createCastleWalker, ridgeYAt } from './castle-walker.js';
 import { createAlpineFlock } from './castle-flock.js';
 import { createAlpineBreeze } from './castle-breeze.js';
 
@@ -37,6 +39,7 @@ const sstep = (a, b, x) => {
   return t * t * (3 - 2 * t);
 };
 
+const isPreview = new URLSearchParams(location.search).get('preview') === '1';
 const glCanvas = document.getElementById('gl');
 const demoContainer = document.getElementById('demo-icons');
 
@@ -45,8 +48,8 @@ const gl = glCanvas.getContext('webgl2', {
   alpha: false,
   depth: false,
   stencil: false,
-  preserveDrawingBuffer: true,
-  powerPreference: 'low-power'
+  preserveDrawingBuffer: false,
+  powerPreference: 'default'
 });
 
 if (!gl) {
@@ -77,8 +80,11 @@ const U = {
   uSunset: gl.getUniformLocation(prog, 'uSunset'),
   uNight: gl.getUniformLocation(prog, 'uNight'),
   uGust: gl.getUniformLocation(prog, 'uGust'),
+  uMoonOcc: gl.getUniformLocation(prog, 'uMoonOcc'),
+  uMoonVis: gl.getUniformLocation(prog, 'uMoonVis'),
   uSeed: gl.getUniformLocation(prog, 'uSeed'),
   uCastleRect: gl.getUniformLocation(prog, 'uCastleRect'),
+  uWindFronts: gl.getUniformLocation(prog, 'uWindFronts'),
   uWindA: gl.getUniformLocation(prog, 'uWindA'),
   uWindB: gl.getUniformLocation(prog, 'uWindB'),
   uWindC: gl.getUniformLocation(prog, 'uWindC')
@@ -155,10 +161,36 @@ function computeTargetMood() {
   return { sunset: Math.sin(k * Math.PI) * 0.65, night: 1.0 - k };
 }
 
+function sampleSkyCloudAlphaCpu(px, py) {
+  const nyPos = py / Math.max(1, H);
+  const hiBand = 1 - sstep(0.26, 0.50, nyPos);
+  const cov = (0.46 + (0.52 - 0.46) * nightMix) * hiBand * (0.52 + 0.48 * P.mist);
+  if (cov <= 0.015) return 0;
+  const qx = (px - flowTime * 13.5) / 380;
+  const qy = py / 210;
+  const r1 = sampleSeamlessNoise(noiseTex, qx * 56, qy * 56, 256, SCENE_SEED, 0);
+  const g1 = sampleSeamlessNoise(noiseTex, qx * 56, qy * 56, 256, SCENE_SEED, 1);
+  const r2 = sampleSeamlessNoise(noiseTex, qx * 112 + 41, qy * 112 + 19, 256, SCENE_SEED, 0);
+  const shape = r1 * 0.56 + r2 * 0.30 + g1 * 0.14;
+  const thresh = 1 - cov;
+  return sstep(thresh - 0.045, thresh + 0.055, shape);
+}
+
+function computeMoonOcclusion() {
+  if (nightMix <= 0.02) return { occ: 0, vis: 1 };
+  const mx = W * 0.80, my = H * 0.14;
+  const mRad = Math.max(24, Math.min(44, Math.min(W, H) * 0.044));
+  const c0 = sampleSkyCloudAlphaCpu(mx, my);
+  const cL = sampleSkyCloudAlphaCpu(mx - mRad * 0.65, my);
+  const cR = sampleSkyCloudAlphaCpu(mx + mRad * 0.65, my);
+  const occ = Math.max(0, Math.min(1, c0 * 0.50 + cL * 0.25 + cR * 0.25));
+  return { occ, vis: 1 - occ * 0.78 };
+}
+
 function allocResources() {
   W = Math.max(1, window.innerWidth);
   H = Math.max(1, window.innerHeight);
-  dpr = Math.min(2, window.devicePixelRatio || 1);
+  dpr = computeRenderDpr(W, H, isPreview);
 
   glCanvas.width = Math.round(W * dpr);
   glCanvas.height = Math.round(H * dpr);
@@ -260,9 +292,12 @@ function renderFrame(t) {
   gl.uniform1f(U.uWindTime, flowTime);
   gl.uniform1f(U.uAdaptive, P.adaptive);
   gl.uniform1f(U.uMist, P.mist);
+  const moon = computeMoonOcclusion();
   gl.uniform1f(U.uSunset, sunsetMix);
   gl.uniform1f(U.uNight, nightMix);
   gl.uniform1f(U.uGust, breeze.gust);
+  gl.uniform1f(U.uMoonOcc, moon.occ);
+  gl.uniform1f(U.uMoonVis, moon.vis);
   gl.uniform1f(U.uAlpsReady, alpsReady);
   gl.uniform1f(U.uSeed, SCENE_SEED);
 
@@ -272,6 +307,7 @@ function renderFrame(t) {
     gl.uniform4f(U.uCastleRect, 0, 0, 0, 0);
   }
 
+  gl.uniform4fv(U.uWindFronts, breeze.frontsBuf);
   gl.uniform4fv(U.uWindA, windRibbons.bufA);
   gl.uniform4fv(U.uWindB, windRibbons.bufB);
   gl.uniform4fv(U.uWindC, windRibbons.bufC);
@@ -293,8 +329,8 @@ function tick(now) {
     moodInitialized = true;
   }
   const moodChanging = Math.abs(tgt.sunset - sunsetMix) > 0.002 || Math.abs(tgt.night - nightMix) > 0.002;
-  // Smooth vsync-aligned 60 FPS pacing (avoids 24ms 30fps judder on 60Hz/144Hz monitors!)
-  const targetInterval = 14;
+  // Smooth vsync-aligned 60 FPS on desktop (zero dropped 60Hz frames); lighter 35 FPS in small preview iframe
+  const targetInterval = isPreview ? 28 : 12;
   if (!needsInitialSettle && lastDraw && now - lastDraw < targetInterval) return;
 
   const dt = lastRaf ? Math.min(0.05, (now - lastRaf) / 1000) : 0.0167;
@@ -317,11 +353,13 @@ function tick(now) {
   }
 
   breeze.step(dt, { W, H, flow: P.flow });
-  castle.step(dt, { speed: P.castleSpeed, flow: P.flow, gust: breeze.gust, showCastle: P.showCastle });
+  const castleRidgeGust = breeze.sampleAt(castle.state.nx, ridgeYAt(castle.state.nx, H), W, H);
+  castle.step(dt, { speed: P.castleSpeed, flow: P.flow, gust: castleRidgeGust, showCastle: P.showCastle });
   flock.step(dt, {
     W, H,
     flow: P.flow,
     gust: breeze.gust,
+    breeze,
     sheepCount: P.sheep,
     sampleSdf: sampleSdfB,
     sampleGrad: sampleGradB

@@ -9,7 +9,8 @@ import {
   createShaderProgram,
   createFieldTexture,
   uploadFieldTexture,
-  createSeamlessNoiseTexture
+  createSeamlessNoiseTexture,
+  computeRenderDpr
 } from '../../core/field-engine.js';
 import { createHostBridge } from '../../core/host-bridge.js';
 import { BEACH_FS, PALM_VS, PALM_FS } from './beach-shader.js';
@@ -28,6 +29,7 @@ const DEFAULTS = {
 };
 const P = { ...DEFAULTS };
 
+const isPreview = new URLSearchParams(location.search).get('preview') === '1';
 const glCanvas = document.getElementById('gl');
 const demoContainer = document.getElementById('demo-icons');
 
@@ -36,8 +38,8 @@ const gl = glCanvas.getContext('webgl2', {
   alpha: false,
   depth: false,
   stencil: false,
-  preserveDrawingBuffer: true,
-  powerPreference: 'low-power'
+  preserveDrawingBuffer: false,
+  powerPreference: 'default'
 });
 
 if (!gl) {
@@ -116,7 +118,7 @@ const palmAtlas = createPalmAtlasLoader(gl, () => {
 function allocResources() {
   W = Math.max(1, window.innerWidth);
   H = Math.max(1, window.innerHeight);
-  dpr = Math.min(2, window.devicePixelRatio || 1);
+  dpr = computeRenderDpr(W, H, isPreview);
 
   glCanvas.width = Math.round(W * dpr);
   glCanvas.height = Math.round(H * dpr);
@@ -383,10 +385,11 @@ function tick(now) {
     return;
   }
 
-  const targetInterval = curMix < 1.0 ? 16 : 33;
+  // Smooth vsync-aligned 60 FPS on desktop (removes old 33ms 30fps cap); lighter 35 FPS in preview iframe
+  const targetInterval = isPreview ? 28 : 12;
   if (!needsInitialSettle && lastDraw && now - lastDraw < targetInterval) return;
 
-  const dt = lastRaf ? Math.min(0.1, (now - lastRaf) / 1000) : 0.033;
+  const dt = lastRaf ? Math.min(0.05, (now - lastRaf) / 1000) : 0.0167;
   lastRaf = now;
   lastDraw = now;
   simTime += dt;

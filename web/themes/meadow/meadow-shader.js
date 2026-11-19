@@ -123,61 +123,74 @@ float meadowWindWave(vec2 p, float wt) {
   return clamp(pow(swell * 0.62 + gustMask * 0.58, 1.55), 0.0, 1.0);
 }
 
-// Dense anisotropic painterly grass carpet combed along the wind direction (turns flat ground into lush turf!)
+// Silky directional Kazuo Oga gouache grass brushwork combed smoothly along wind direction
 vec2 anisotropicTurf(vec2 p, float wt, float windWave) {
-  // Compress along wind direction, stretch across -> soft directional grass brushstrokes
-  vec2 windUV = vec2(dot(p, WIND_DIR) * 0.28, dot(p, WIND_PERP) * 1.45);
-  // Subtle physical bending shift as each wind wave rolls across the carpet
-  vec2 shift = vec2(-windWave * 7.5 - sin(wt * 0.9 + windUV.y * 0.02) * 1.2, windWave * 1.8);
-  float turfBroad = N(windUV + shift, 195.0).g;
-  float turfFine  = N(windUV * 1.85 + shift * 1.35 + vec2(37.0, 19.0), 105.0).a;
+  vec2 windUV = vec2(dot(p, WIND_DIR) * 0.36, dot(p, WIND_PERP) * 1.45);
+  vec2 shift = vec2(-windWave * 11.0 - sin(wt * 0.95 + windUV.y * 0.018) * 1.2, windWave * 1.8);
+  float turfBroad = N(windUV + shift, 720.0).g;
+  float turfFine  = N(windUV * 1.35 + shift * 1.25 + vec2(37.0, 19.0), 520.0).a;
   float combed = turfBroad * 0.58 + turfFine * 0.42;
-  float ridgeHi = ss(0.50, 0.84, combed) * (0.28 + 0.72 * windWave);
-  float furrow  = ss(0.52, 0.20, combed);
+  float ridgeHi = ss(0.52, 0.86, combed) * (0.30 + 0.70 * windWave);
+  float furrow  = ss(0.52, 0.18, combed);
   return vec2(furrow, ridgeHi);
 }
 
-// Dense, seamless 3x3 perspective-accurate top-down curved grass tufts (blends softly into lush turf!)
+// Organic upright fanned 2-3 blade Ghibli grass tufts (\ | /) curving softly in wind (2x2 clip-free, ZERO hair!)
 vec2 swayingMeadowGrass(vec2 p, float wt, float localWind) {
-  const vec2 G = vec2(14.0, 12.0);
-  vec2 c0 = floor(p / G);
+  const vec2 G = vec2(26.0, 18.0);
+  vec2 c0 = floor((p + vec2(-4.0, 5.0)) / G - 0.5);
   float shade = 0.0;
   float glint = 0.0;
 
-  for (int jy = -1; jy <= 1; jy++) {
-    for (int jx = -1; jx <= 1; jx++) {
+  for (int jy = 0; jy <= 1; jy++) {
+    for (int jx = 0; jx <= 1; jx++) {
       vec2 c = c0 + vec2(float(jx), float(jy));
       float h1 = hash2(c + 3.1);
       vec2 cp = (c + 0.5) * G;
 
-      // Natural organic meadow clump density
-      float dens = 0.74 * ss(0.24, 0.72, N(cp, 740.0).r) + 0.16;
+      float dens = 0.62 * ss(0.24, 0.74, N(cp, 740.0).r) + 0.24;
       if (h1 > dens) continue;
 
       float h2 = hash2(c + 11.7);
       float h3 = hash2(c + 23.9);
       float h4 = hash2(c + 41.3);
 
-      vec2 root = cp + (vec2(h2, h3) - 0.5) * vec2(10.0, 8.5);
+      vec2 root = (c + vec2(0.22 + 0.56 * h2, 0.22 + 0.56 * h3)) * G;
       vec2 rel = p - root;
-      if (abs(rel.x) > 11.5 || abs(rel.y) > 9.5) continue;
+      if (rel.x < -10.0 || rel.x > 16.0 || rel.y < -13.0 || rel.y > 3.0) continue;
 
-      // Top-down foreshortened blade leaning naturally along WIND_DIR (NOT straight up like a 2D side-scroller!)
-      float gust = localWind * (0.75 + 0.45 * h4);
-      float flutter = sin(wt * (2.1 + h2 * 1.4) + h3 * 6.283 + dot(root, WIND_DIR) * 0.025) * (0.75 + gust * 0.9);
-      vec2 baseDir = WIND_DIR * (3.6 + h4 * 3.0) + WIND_PERP * ((h2 - 0.5) * 3.4 - 1.2);
-      vec2 tipOff  = baseDir + WIND_DIR * (gust * 4.8 + flutter) + vec2(0.0, -1.6 + gust * 1.1);
-      vec2 midOff  = tipOff * 0.52 + vec2(-0.5, -1.1);
+      float baseH = 5.0 + 4.4 * h4 * h4;
+      float gust = clamp(localWind * (0.76 + 0.44 * h4), 0.0, 1.15);
+      float flutter = sin(wt * (2.2 + h2 * 1.4) + h3 * 6.283 + dot(root, WIND_DIR) * 0.025) * (0.05 + gust * 0.11);
+      float bend = clamp(0.12 + gust * 0.58 + flutter, -0.04, 0.80);
+      float tuftAlpha = 0.46 + 0.44 * h4;
+      int bCount = h4 > 0.36 ? 3 : 2;
 
-      vec2 s1 = segDT(p, root, root + midOff);
-      vec2 s2 = segDT(p, root + midOff, root + tipOff);
-      float dMain = min(s1.x, s2.x);
-      float tMain = s1.x < s2.x ? s1.y * 0.5 : 0.5 + s2.y * 0.5;
-      float thick = mix(0.95, 0.34, tMain);
-      float mask  = (1.0 - ss(thick * 0.4, thick + 0.58, dMain)) * (0.42 + 0.36 * h3);
+      for (int k = 0; k < 3; k++) {
+        if (k >= bCount) break;
+        float lean0 = (k == 0 ? -0.48 : (k == 1 ? 0.00 : 0.46)) + (h2 - 0.5) * 0.26;
+        float hSc   = (k == 0 ?  0.74 : (k == 1 ? 1.00 : 0.82)) + (h3 - 0.5) * 0.16;
+        float ox    = (k == 0 ? -1.40 : (k == 1 ? 0.00 : 1.35));
+        float stiff = (k == 0 ?  0.84 : (k == 1 ? 1.12 : 0.96));
+        float wSc   = (k == 0 ?  0.82 : (k == 1 ? 0.95 : 0.86));
 
-      shade = max(shade, mask * (1.0 - tMain * 0.52));
-      glint = max(glint, mask * ss(0.42, 0.95, tMain) * ss(0.24, 0.92, gust));
+        float bh = clamp(baseH * hSc, 2.2, 11.5);
+        float bBend = bend * stiff;
+        float uRaw = -rel.y / bh;
+        float u = clamp(uRaw, 0.0, 1.0);
+        float curveX = (lean0 * u + bBend * u * u) * bh;
+        float slope = lean0 + 2.0 * bBend * u;
+        float dx = ((rel.x - ox) - curveX) * inversesqrt(1.0 + slope * slope);
+        float capY = max(0.0, -uRaw) * bh + max(0.0, uRaw - 1.0) * bh;
+        float dist = length(vec2(dx, capY));
+
+        float taper = u * (1.22 - 0.22 * u);
+        float thick = 0.86 * (1.0 - 0.78 * taper) * wSc;
+        float rootMerge = ss(0.0, 0.16, u);
+        float m = (1.0 - ss(thick * 0.25, thick + 0.54, dist)) * tuftAlpha;
+        shade = max(shade, m * (1.0 - ss(0.28, 0.78, u)) * (0.55 + 0.45 * rootMerge));
+        glint = max(glint, m * ss(0.26, 0.88, u));
+      }
     }
   }
   return vec2(shade, glint);
@@ -617,13 +630,14 @@ void main() {
 
   if (landMask > 0.01) {
     vec2 grass = swayingMeadowGrass(p, wt, windWave);
-    col = mix(col, gInk, grass.x * mix(0.42, 0.44, night) * landMask);
+    vec3 tuftRootCol = col * mix(vec3(0.75, 0.82, 0.76), vec3(0.72, 0.78, 0.85), night);
     vec3 tipCol = mix(
-      vec3(0.90, 0.94, 0.62),
-      mix(vec3(0.24, 0.40, 0.46), vec3(0.76, 0.90, 0.97), moonPool * (1.0 - cloudShMask * 0.85)),
+      mix(col, vec3(0.90, 0.95, 0.58), 0.70),
+      mix(col * 1.18, vec3(0.76, 0.90, 0.97), 0.52 * moonPool * (1.0 - cloudShMask * 0.85)),
       night
     );
-    col = mix(col, tipCol, grass.y * mix(0.36, 0.44, night) * landMask);
+    col = mix(col, tuftRootCol, grass.x * mix(0.52, 0.48, night) * landMask);
+    col = mix(col, tipCol, grass.y * mix(0.56, 0.50, night) * landMask);
 
     // Silver moon-dew glints catching wind-bent grass tips outside cloud shadows
     if (night > 0.02 && moonPool > 0.14) {

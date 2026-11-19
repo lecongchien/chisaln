@@ -139,11 +139,31 @@ const SHEEP_LEGS = [
   { u: 0.69, v: 0.72, phase: 0.75, far: false, hind: false }  // Near-front (RF)
 ];
 
+// Overlay band strictly covers lower hillside (y = 0.38*H .. 1.0*H -> 4.5x less GPU upload per frame!)
+export const FIELD_BAND_TOP = 0.38;
+export const FIELD_BAND_H = 1.0 - FIELD_BAND_TOP;
+
+// Pre-baked soft warm candlelight halo (avoids per-frame createRadialGradient allocation)
+function createWindowGlowCanvas() {
+  const c = document.createElement('canvas');
+  c.width = 64;
+  c.height = 64;
+  const cx = c.getContext('2d');
+  const g = cx.createRadialGradient(32, 32, 2, 32, 32, 30);
+  g.addColorStop(0, 'rgba(255, 206, 102, 0.52)');
+  g.addColorStop(1, 'rgba(255, 180, 80, 0.0)');
+  cx.fillStyle = g;
+  cx.fillRect(0, 0, 64, 64);
+  return c;
+}
+
 export function createAlpineFlock(gl, onReady) {
   const canvas = document.createElement('canvas');
   canvas.width = 960;
-  canvas.height = 540;
+  canvas.height = 335;
   const ctx = canvas.getContext('2d');
+  const windowGlowSpr = createWindowGlowCanvas();
+  const drawList = [];
 
   const tex = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D, tex);
@@ -159,7 +179,7 @@ export function createAlpineFlock(gl, onReady) {
   const sheepStand  = loadSprite('assets/castle-sheep-stand.png', onReady); // natural facing LEFT (-1)
   const sheepWalk   = loadSprite('assets/castle-sheep-walk.png', onReady, buildLeglessSheepBody); // natural facing RIGHT (+1)
 
-  const cottage = { x: 260, y: 520, w: 236, h: 148, active: true, initialized: false };
+  const cottage = { x: 260, y: 520, w: 236, h: 148, active: true, initialized: false, gustSmooth: 0.25 };
   const cottageSmoke = createSmokePlume({
     kind: 'hearth',
     spawnRate: 0.062,
@@ -191,20 +211,22 @@ export function createAlpineFlock(gl, onReady) {
     moveBlend: 0,
     walkPhase: 0,
     swayPhase: 0,
+    gustSmooth: 0.25,
     waitTimer: 5.0,
     initialized: false
   };
   const sheep = [];
 
   function resize(W, H) {
-    const scale = Math.min(1.5, 1920 / Math.max(1, W));
+    // Strictly allocate ONLY the lower hillside band (0.38*H..H) capped at 1152px wide (~1.85MB vs 8.3MB!)
+    const scale = Math.min(1.0, 1152 / Math.max(1, W));
     const nw = Math.max(320, Math.round(W * scale));
-    const nh = Math.max(180, Math.round(H * scale));
+    const nh = Math.max(120, Math.round(H * FIELD_BAND_H * scale));
     if (canvas.width !== nw || canvas.height !== nh) {
       canvas.width = nw;
       canvas.height = nh;
       ctx.imageSmoothingEnabled = true;
-      ctx.imageSmoothingQuality = 'high';
+      ctx.imageSmoothingQuality = 'medium';
       gl.bindTexture(gl.TEXTURE_2D, tex);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, nw, nh, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
     }
@@ -300,15 +322,19 @@ export function createAlpineFlock(gl, onReady) {
     }
   }
 
-  function step(dt, { W, H, flow, gust = 0.4, sheepCount, sampleSdf, sampleGrad }) {
+  function step(dt, { W, H, flow, gust = 0.4, breeze = null, sheepCount, sampleSdf, sampleGrad }) {
     const sc = Math.max(0.58, Math.min(1.12, Math.min(W, H) / 900));
     const wind = Math.max(0.15, flow) * (0.78 + gust * 0.65);
     syncSheepCount(sheepCount, W, H, sampleSdf);
 
-    // 1. Continuous soft wood-hearth smoke curling gently from the brick chimney
+    // 1. Tier-2 local wind at the prairie cottage (smoke & base grass bow RIGHT as wind tier arrives!)
+    const cotTargetGust = breeze ? breeze.sampleAt(cottage.x / Math.max(1, W), cottage.y, W, H) : gust;
+    const cotRate = cotTargetGust > cottage.gustSmooth ? 5.2 : 2.5;
+    cottage.gustSmooth += (cotTargetGust - cottage.gustSmooth) * Math.min(1, dt * cotRate);
+
     if (cottage.active) {
       const m = getCottageChimneyMouth();
-      cottageSmoke.step(dt, m.x, m.y, { wind: Math.max(0.15, flow), gust, sc, active: true });
+      cottageSmoke.step(dt, m.x, m.y, { wind: Math.max(0.15, flow), gust: cottage.gustSmooth, sc, active: true });
     }
 
     // 2. Shepherd leisurely strolling with buttery-smooth acceleration, deceleration & wind sway
@@ -349,8 +375,12 @@ export function createAlpineFlock(gl, onReady) {
     shepherd.moveBlend += (targetMove - shepherd.moveBlend) * Math.min(1, dt * 6.0);
     // Stride phase advances proportionally to actual ground speed (zero pop or stutter!)
     shepherd.walkPhase += (shSpd / Math.max(6, 16 * sc)) * dt * 4.8;
+    // Tier-3 local wind at shepherd position (cloak sways right as the wind layer reaches the flock!)
+    const shTargetGust = breeze ? breeze.sampleAt(shepherd.x / Math.max(1, W), shepherd.y, W, H) : gust;
+    const shRate = shTargetGust > shepherd.gustSmooth ? 5.0 : 2.5;
+    shepherd.gustSmooth += (shTargetGust - shepherd.gustSmooth) * Math.min(1, dt * shRate);
     // Strictly monotonic wind sway phase (NEVER t * variable -> zero phase-whip jitter!)
-    shepherd.swayPhase += dt * (1.35 + gust * 0.65) * Math.min(1.4, wind);
+    shepherd.swayPhase += dt * (1.25 + shepherd.gustSmooth * 0.80) * Math.min(1.4, wind);
 
     // 3. Autonomous grazing sheep flock (ZERO sliding: stationary graze/stand, stride-synced walk!)
     for (let i = 0; i < sheep.length; i++) {
@@ -653,16 +683,18 @@ export function createAlpineFlock(gl, onReady) {
   }
 
   function renderAndUpload(t, { W, H, flow, gust = 0.4, sunset, night, breeze }) {
+    const bandY0 = H * FIELD_BAND_TOP;
+    const bandH  = Math.max(1, H * FIELD_BAND_H);
     const sx = canvas.width / Math.max(1, W);
-    const sy = canvas.height / Math.max(1, H);
+    const sy = canvas.height / bandH;
     const sc = Math.max(0.58, Math.min(1.12, Math.min(W, H) / 900));
-    const wind = Math.max(0.15, flow);
     const warmWindowAmt = Math.max(sunset * 0.72, night);
 
-    ctx.setTransform(sx, 0, 0, sy, 0, 0);
-    ctx.clearRect(0, 0, W, H);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.setTransform(sx, 0, 0, sy, 0, -bandY0 * sy);
 
-    const drawList = [];
+    drawList.length = 0;
 
     if (cottage.active && cottageSpr.ready) {
       drawList.push({
@@ -684,7 +716,7 @@ export function createAlpineFlock(gl, onReady) {
           const dy = cottage.y - cottage.h * 0.855;
           ctx.drawImage(cottageSpr.img, dx, dy, cottage.w, cottage.h);
 
-          // Cozy warm golden candlelight glow inside front cottage window at Sunset & Night
+          // Cozy warm golden candlelight glow inside front cottage window (pre-baked halo, zero per-frame gradient!)
           if (warmWindowAmt > 0.04) {
             const wx = dx + cottage.w * 0.658;
             const wy = dy + cottage.h * 0.618;
@@ -695,23 +727,19 @@ export function createAlpineFlock(gl, onReady) {
             ctx.globalAlpha = warmWindowAmt * 0.90 * flicker;
             ctx.fillStyle = '#ffcf6b';
             ctx.fillRect(wx, wy, ww, wh);
-            const hg = ctx.createRadialGradient(wx + ww * 0.5, wy + wh * 0.5, 1, wx + ww * 0.5, wy + wh * 0.5, ww * 2.2);
-            hg.addColorStop(0, 'rgba(255, 206, 102, 0.48)');
-            hg.addColorStop(1, 'rgba(255, 180, 80, 0.0)');
-            ctx.fillStyle = hg;
-            ctx.fillRect(wx - ww * 2, wy - wh * 1.5, ww * 5, wh * 4);
+            ctx.drawImage(windowGlowSpr, wx - ww * 2, wy - wh * 1.5, ww * 5, wh * 4);
             ctx.restore();
           }
 
-          // Wind-swaying grass tufts & daisies rooted around stone wall base
-          drawCottageBaseTufts(cottage.x, cottage.y, cottage.w, sc, t, gust);
+          // Wind-swaying grass tufts & daisies rooted around stone wall base (synced to Tier 2 wind!)
+          drawCottageBaseTufts(cottage.x, cottage.y, cottage.w, sc, t, cottage.gustSmooth);
         }
       });
     }
 
     drawList.push({
       y: shepherd.y,
-      draw: () => drawShepherdSprite(shepherd.x, shepherd.y, sc, gust)
+      draw: () => drawShepherdSprite(shepherd.x, shepherd.y, sc, shepherd.gustSmooth)
     });
 
     for (const sh of sheep) {

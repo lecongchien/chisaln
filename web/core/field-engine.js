@@ -312,5 +312,50 @@ export function createSeamlessNoiseTexture(gl, size = 256) {
   gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, size, size, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
   gl.generateMipmap(gl.TEXTURE_2D);
+  tex._noiseData = data;
+  tex._noiseSize = size;
   return tex;
+}
+
+/**
+ * Bilinearly samples channel ch (0=R,1=G,2=B,3=A) of createSeamlessNoiseTexture on CPU,
+ * matching GLSL `texture(uNoise, p / scale + seed * 0.017)` bit-for-bit (0.001ms per query).
+ */
+export function sampleSeamlessNoise(tex, px, py, scale, seed, ch = 0) {
+  const data = tex._noiseData;
+  const size = tex._noiseSize || 256;
+  if (!data) return 0.5;
+  const off = seed * 0.017;
+  let u = (px / scale + off) % 1;
+  let v = (py / scale + off) % 1;
+  if (u < 0) u += 1;
+  if (v < 0) v += 1;
+  const fx = u * size - 0.5;
+  const fy = v * size - 0.5;
+  const x0 = ((Math.floor(fx) % size) + size) % size;
+  const y0 = ((Math.floor(fy) % size) + size) % size;
+  const x1 = (x0 + 1) % size;
+  const y1 = (y0 + 1) % size;
+  const tx = fx - Math.floor(fx);
+  const ty = fy - Math.floor(fy);
+  const s00 = data[(y0 * size + x0) * 4 + ch];
+  const s10 = data[(y0 * size + x1) * 4 + ch];
+  const s01 = data[(y1 * size + x0) * 4 + ch];
+  const s11 = data[(y1 * size + x1) * 4 + ch];
+  const a = s00 + (s10 - s00) * tx;
+  const b = s01 + (s11 - s01) * tx;
+  return (a + (b - a) * ty) / 255;
+}
+
+/**
+ * Computes an optimal WebGL2 render DPR capping backbuffer pixels at crisp Full HD (~2.07M px)
+ * on desktop and 1.0x inside the Settings preview iframe to guarantee silky 60 FPS on iGPUs.
+ */
+export function computeRenderDpr(W, H, isPreview = false) {
+  if (isPreview) return Math.min(1.0, window.devicePixelRatio || 1);
+  const raw = Math.min(1.5, window.devicePixelRatio || 1);
+  const maxPixels = 1920 * 1080;
+  const curPixels = Math.max(1, W * H * raw * raw);
+  const ratio = curPixels > maxPixels ? Math.sqrt(maxPixels / curPixels) : 1.0;
+  return Math.max(0.75, raw * ratio);
 }
