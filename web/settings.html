@@ -23,12 +23,12 @@
           <circle cx="16" cy="12.5" r="4.6" fill="rgba(255,255,255,0.92)"/>
           <circle cx="17.8" cy="11.2" r="3.6" fill="#007AFF"/>
         </svg>
-        <div>
+        <div class="brand-copy">
           <div class="brand-title">Scream</div>
           <div class="brand-meta">
             <span class="status-dot" id="status-dot"></span>
             <span id="status-text">Đang chạy trên màn hình</span>
-            <span>·</span>
+            <span aria-hidden="true">·</span>
             <span id="icon-count-text">Đang đồng bộ icon</span>
           </div>
         </div>
@@ -36,12 +36,15 @@
 
       <div class="topbar-actions">
         <button class="btn" id="btn-pause" type="button">
-          <svg id="pause-icon" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
+          <svg id="pause-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
           <span id="btn-pause-label">Tạm dừng</span>
         </button>
         <button class="btn" id="btn-reload" type="button">
-          <svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/></svg>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/></svg>
           <span id="btn-reload-label">Tải lại</span>
+        </button>
+        <button class="btn btn-icon" id="btn-appearance" type="button" title="Đổi giao diện Sáng / Tối" aria-label="Đổi giao diện Sáng / Tối">
+          <svg id="appearance-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
         </button>
         <div class="lang-pill" role="group" aria-label="Language">
           <button type="button" data-lang="vi" class="active">VI</button>
@@ -62,71 +65,145 @@
 
         <div class="preview-shell" id="preview-shell">
           <iframe id="preview-frame" title="Xem trước hình nền trực tiếp" allowfullscreen></iframe>
-          <div class="preview-loading" id="preview-loading">Đang khởi tạo cảnh quan WebGL2...</div>
+          <div class="preview-loading" id="preview-loading">
+            <span class="loading-pill">
+              <span class="loading-spinner" aria-hidden="true"></span>
+              <span id="preview-loading-text">Đang khởi tạo cảnh quan WebGL2...</span>
+            </span>
+          </div>
+          <div class="preview-paused-overlay" id="preview-paused-overlay" aria-hidden="true">
+            <span class="paused-pill">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
+              <span id="preview-paused-text">Đang tạm dừng</span>
+            </span>
+          </div>
           <div class="preview-hud">
             <span class="preview-badge" id="preview-note" title="Xem trước đồng bộ theo bố cục icon trên desktop của bạn.">
-              <span class="preview-badge-dot" aria-hidden="true"></span>
+              <span class="preview-badge-dot" id="preview-badge-dot" aria-hidden="true"></span>
               <span id="preview-note-text">Đồng bộ · 12 icon</span>
             </span>
-            <div class="hud-dock" role="toolbar" aria-label="Công cụ xem trước">
-              <button class="btn-hud" id="btn-share-png" type="button">
-                <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="12" cy="12" r="3.2"/></svg>
-                <span id="btn-share-png-label">Lưu ảnh</span>
-              </button>
-              <span class="hud-sep" aria-hidden="true"></span>
-              <button class="btn-hud" id="btn-share-video" type="button">
-                <svg viewBox="0 0 24 24"><rect x="3" y="6" width="13" height="12" rx="2"/><polygon points="16 10 21 7 21 17 16 14"/></svg>
-                <span id="btn-share-video-label">Clip 4s</span>
-              </button>
-              <span class="hud-sep" aria-hidden="true"></span>
-              <button class="btn-hud btn-hud-icon" id="btn-fullscreen" type="button" title="Toàn màn hình" aria-label="Toàn màn hình">
-                <svg viewBox="0 0 24 24"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
-              </button>
+
+            <div class="hud-right-group">
+              <div class="hud-dock hud-time-dock" id="quick-time-dock" role="radiogroup" aria-label="Thời gian trong ngày">
+                <button class="btn-hud btn-hud-time" type="button" data-time="0" aria-pressed="false" title="Ban ngày">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><line x1="12" y1="2.5" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="21.5"/><line x1="4.9" y1="4.9" x2="6.7" y2="6.7"/><line x1="17.3" y1="17.3" x2="19.1" y2="19.1"/><line x1="2.5" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="21.5" y2="12"/><line x1="4.9" y1="19.1" x2="6.7" y2="17.3"/><line x1="17.3" y1="6.7" x2="19.1" y2="4.9"/></svg>
+                </button>
+                <button class="btn-hud btn-hud-time" type="button" data-time="1" aria-pressed="false" title="Hoàng hôn">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 17a5 5 0 0 0-10 0"/><line x1="12" y1="7" x2="12" y2="9.5"/><line x1="5.2" y1="11.2" x2="7" y2="13"/><line x1="18.8" y1="11.2" x2="17" y2="13"/><line x1="3" y1="17" x2="21" y2="17"/><line x1="6" y1="20.5" x2="18" y2="20.5"/></svg>
+                </button>
+                <button class="btn-hud btn-hud-time" type="button" data-time="2" aria-pressed="false" title="Ban đêm">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14.5A8.5 8.5 0 1 1 9.5 3.5a6.8 6.8 0 0 0 11 11z"/></svg>
+                </button>
+                <button class="btn-hud btn-hud-time" type="button" data-time="3" aria-pressed="false" title="Tự động theo giờ">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><polyline points="12 7.5 12 12 15.2 13.8"/></svg>
+                </button>
+              </div>
+
+              <div class="hud-dock" role="toolbar" aria-label="Công cụ xem trước">
+                <button class="btn-hud" id="btn-share-png" type="button">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="12" cy="12" r="3.2"/></svg>
+                  <span id="btn-share-png-label">Lưu ảnh</span>
+                </button>
+                <span class="hud-sep" aria-hidden="true"></span>
+                <button class="btn-hud" id="btn-share-video" type="button">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="13" height="12" rx="2"/><polygon points="16 10 21 7 21 17 16 14"/></svg>
+                  <span id="btn-share-video-label">Clip 4s</span>
+                </button>
+                <span class="hud-sep" aria-hidden="true"></span>
+                <button class="btn-hud btn-hud-icon" id="btn-fullscreen" type="button" title="Toàn màn hình" aria-label="Toàn màn hình">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+                </button>
+              </div>
             </div>
           </div>
         </div>
 
-        <div>
+        <div class="themes-section">
           <h2 class="section-heading" id="themes-heading">Chủ đề thích ứng</h2>
           <div class="theme-grid" id="theme-grid"></div>
         </div>
       </section>
 
       <aside class="inspector-col">
-        <div class="inspector-scroll">
-          <div class="inspector-header">
-            <h2 class="inspector-title" id="inspector-title">Tùy chỉnh cảnh quan</h2>
-            <button class="btn ghost" id="btn-reset" type="button">
-              <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><polyline points="3 3 3 8 8 8"/></svg>
-              <span id="btn-reset-label">Mặc định</span>
-            </button>
+        <div class="inspector-bar">
+          <div class="inspector-tabs" role="tablist" aria-label="Mục cài đặt">
+            <button class="inspector-tab active" id="tab-btn-scene" type="button" role="tab" aria-selected="true" aria-controls="tab-panel-scene" data-tab="scene">Cảnh quan</button>
+            <button class="inspector-tab" id="tab-btn-system" type="button" role="tab" aria-selected="false" aria-controls="tab-panel-system" data-tab="system">Hệ thống</button>
+          </div>
+          <button class="btn ghost btn-compact" id="btn-reset" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><polyline points="3 3 3 8 8 8"/></svg>
+            <span id="btn-reset-label">Mặc định</span>
+          </button>
+        </div>
+
+        <div class="inspector-scroll" id="inspector-scroll">
+          <div id="tab-panel-scene" class="tab-panel active" role="tabpanel" aria-labelledby="tab-btn-scene">
+            <div id="params-container" class="params-stack"></div>
           </div>
 
-          <div id="params-container" class="params-stack"></div>
+          <div id="tab-panel-system" class="tab-panel" role="tabpanel" aria-labelledby="tab-btn-system" hidden>
+            <div class="params-stack">
+              <div class="param-group">
+                <div class="group-title" id="lbl-system-group">Vận hành &amp; Màn hình</div>
+                <div class="system-footer">
+                  <div class="switch-row">
+                    <span>
+                      <strong id="lbl-autopause">Tự động tạm dừng khi mở toàn màn hình</strong>
+                      <small id="hint-autopause">Giảm tải GPU về 0% khi chơi game hoặc phóng to cửa sổ</small>
+                    </span>
+                    <button class="toggle" id="tog-autopause" role="switch" aria-checked="true" aria-labelledby="lbl-autopause" type="button"></button>
+                  </div>
+                  <div class="switch-row">
+                    <span>
+                      <strong id="lbl-multimon">Phủ tất cả màn hình</strong>
+                      <small id="hint-multimon">Mỗi màn hình tự uốn địa hình theo icon riêng</small>
+                    </span>
+                    <button class="toggle" id="tog-multimon" role="switch" aria-checked="false" aria-labelledby="lbl-multimon" type="button"></button>
+                  </div>
+                  <div class="switch-row">
+                    <span>
+                      <strong id="lbl-autostart">Khởi động cùng Windows</strong>
+                      <small id="hint-autostart">Chạy âm thầm dưới khay hệ thống khi mở máy</small>
+                    </span>
+                    <button class="toggle" id="tog-autostart" role="switch" aria-checked="false" aria-labelledby="lbl-autostart" type="button"></button>
+                  </div>
+                </div>
+              </div>
 
-          <div class="param-group">
-            <div class="group-title" id="lbl-system-group">Hệ thống</div>
-            <div class="system-footer">
-              <div class="switch-row">
-                <span>
-                  <strong id="lbl-autopause">Tự động tạm dừng khi mở toàn màn hình</strong>
-                  <small id="hint-autopause">Giảm tải GPU về 0% khi chơi game hoặc phóng to cửa sổ</small>
-                </span>
-                <button class="toggle" id="tog-autopause" role="switch" aria-checked="true" aria-labelledby="lbl-autopause" type="button"></button>
+              <div class="param-group">
+                <div class="group-title" id="lbl-appearance-group">Giao diện cửa sổ</div>
+                <div class="group-card">
+                  <div class="param-row">
+                    <div class="param-top">
+                      <span class="param-label" id="lbl-appearance">Chế độ màu cửa sổ</span>
+                      <span class="param-val" id="val-appearance">Tự động</span>
+                    </div>
+                    <div class="param-hint" id="hint-appearance">Đồng bộ theo Windows hoặc chọn cố định Sáng / Tối cho dịu mắt ban đêm</div>
+                    <div class="seg-control" id="appearance-seg" role="radiogroup" aria-labelledby="lbl-appearance" style="--cols: 3">
+                      <button type="button" data-appearance="auto" aria-pressed="true" class="active">Tự động</button>
+                      <button type="button" data-appearance="light" aria-pressed="false">Sáng</button>
+                      <button type="button" data-appearance="dark" aria-pressed="false">Tối</button>
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div class="switch-row">
-                <span>
-                  <strong id="lbl-multimon">Phủ tất cả màn hình</strong>
-                  <small id="hint-multimon">Mỗi màn hình tự uốn địa hình theo icon riêng</small>
-                </span>
-                <button class="toggle" id="tog-multimon" role="switch" aria-checked="false" aria-labelledby="lbl-multimon" type="button"></button>
-              </div>
-              <div class="switch-row">
-                <span>
-                  <strong id="lbl-autostart">Khởi động cùng Windows</strong>
-                  <small id="hint-autostart">Chạy âm thầm dưới khay hệ thống khi đăng nhập</small>
-                </span>
-                <button class="toggle" id="tog-autostart" role="switch" aria-checked="false" aria-labelledby="lbl-autostart" type="button"></button>
+
+              <div class="param-group">
+                <div class="group-title" id="lbl-shortcuts-group">Phím tắt toàn cục</div>
+                <div class="group-card shortcut-card">
+                  <div class="shortcut-row">
+                    <span id="lbl-sc-night">Đổi nhanh Ngày / Đêm</span>
+                    <span class="kbd-group"><kbd>Ctrl</kbd><kbd>Alt</kbd><kbd>N</kbd></span>
+                  </div>
+                  <div class="shortcut-row">
+                    <span id="lbl-sc-pause">Tạm dừng / Tiếp tục</span>
+                    <span class="kbd-group"><kbd>Ctrl</kbd><kbd>Alt</kbd><kbd>H</kbd></span>
+                  </div>
+                  <div class="shortcut-row">
+                    <span id="lbl-sc-settings">Mở cửa sổ Cài đặt</span>
+                    <span class="kbd-group"><kbd>Ctrl</kbd><kbd>Alt</kbd><kbd>M</kbd></span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

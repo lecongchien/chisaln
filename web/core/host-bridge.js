@@ -142,7 +142,7 @@ export function createHostBridge(callbacks) {
         break;
 
       case 'pause':
-        paused = isPreview ? false : !!msg.v;
+        paused = (isPreview && !msg.manual) ? false : !!msg.v;
         callbacks.onPause?.(paused, iconsSeen);
         break;
 

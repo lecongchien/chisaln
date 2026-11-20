@@ -1,16 +1,30 @@
 /**
  * Settings Window Application Controller
- * Orchestrates theme catalog rendering, parameter controls, live preview sync,
- * and bidirectional WebView2 communication with the C# WallpaperCoordinator.
+ * Orchestrates theme catalog rendering, compact toggle/slider controls with dependency dimming,
+ * zero-flash single-load preview sync, quick time-of-day HUD, Reset+Undo, Light/Dark appearance,
+ * and robust bidirectional WebView2 communication with WallpaperCoordinator.
  */
 import { COPY, THEME_THUMBS, THEME_SUBTITLES } from './settings-copy.js';
 
 const hasHost = !!(window.chrome && window.chrome.webview);
+const APPEARANCE_KEY = 'scream.ui.appearance';
+const darkMedia = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+
+// Dependent controls disabled automatically when their parent toggle is OFF
+const PARAM_DEPS = {
+  sigma: { parent: 'adaptive', min: 0.5 },
+  warp: { parent: 'adaptive', min: 0.5 },
+  margin: { parent: 'adaptive', min: 0.5 },
+  radius: { parent: 'adaptive', min: 0.5 },
+  castleSpeed: { parent: 'showCastle', min: 0.5 }
+};
 
 const state = {
   manifest: null,
   themeId: 'beach',
   lang: 'vi',
+  activeTab: 'scene',
+  appearance: loadSavedAppearance(), // 'auto' | 'light' | 'dark'
   paramsByTheme: {},
   paused: false,
   manualPause: false,
@@ -20,18 +34,32 @@ const state = {
   screenCount: 1,
   iconCount: 12,
   latestIconsMsg: null,
-  previewReady: false
+  previewReady: false,
+  previewPage: '',
+  hostInitialized: false,
+  exporting: false,
+  lastResetSnapshot: null
 };
 
 const el = {
   previewShell: document.getElementById('preview-shell'),
   previewFrame: document.getElementById('preview-frame'),
   previewLoading: document.getElementById('preview-loading'),
+  previewLoadingText: document.getElementById('preview-loading-text'),
+  previewPausedOverlay: document.getElementById('preview-paused-overlay'),
+  previewPausedText: document.getElementById('preview-paused-text'),
   previewNote: document.getElementById('preview-note'),
+  previewBadgeDot: document.getElementById('preview-badge-dot'),
   previewNoteText: document.getElementById('preview-note-text'),
+  quickTimeDock: document.getElementById('quick-time-dock'),
   btnFullscreen: document.getElementById('btn-fullscreen'),
   themeGrid: document.getElementById('theme-grid'),
+  inspectorScroll: document.getElementById('inspector-scroll'),
   paramsContainer: document.getElementById('params-container'),
+  tabBtnScene: document.getElementById('tab-btn-scene'),
+  tabBtnSystem: document.getElementById('tab-btn-system'),
+  tabPanelScene: document.getElementById('tab-panel-scene'),
+  tabPanelSystem: document.getElementById('tab-panel-system'),
   statusDot: document.getElementById('status-dot'),
   statusText: document.getElementById('status-text'),
   iconCountText: document.getElementById('icon-count-text'),
@@ -40,6 +68,10 @@ const el = {
   pauseIcon: document.getElementById('pause-icon'),
   btnReload: document.getElementById('btn-reload'),
   btnReloadLabel: document.getElementById('btn-reload-label'),
+  btnAppearance: document.getElementById('btn-appearance'),
+  appearanceIcon: document.getElementById('appearance-icon'),
+  appearanceSeg: document.getElementById('appearance-seg'),
+  valAppearance: document.getElementById('val-appearance'),
   btnTray: document.getElementById('btn-tray'),
   btnTrayLabel: document.getElementById('btn-tray-label'),
   btnReset: document.getElementById('btn-reset'),
@@ -59,6 +91,50 @@ const el = {
   toastAction: document.getElementById('toast-action')
 };
 
+function loadSavedAppearance() {
+  try {
+    const saved = localStorage.getItem(APPEARANCE_KEY);
+    if (saved === 'light' || saved === 'dark' || saved === 'auto') return saved;
+  } catch { /* ignore storage restrictions */ }
+  return 'auto';
+}
+
+function resolveDarkAppearance() {
+  if (state.appearance === 'dark') return true;
+  if (state.appearance === 'light') return false;
+  return !!(darkMedia && darkMedia.matches);
+}
+
+function applyAppearance() {
+  const isDark = resolveDarkAppearance();
+  document.documentElement.setAttribute('data-appearance', isDark ? 'dark' : 'light');
+  sendToHost({ t: 'uiTheme', dark: isDark });
+
+  if (el.appearanceIcon) {
+    el.appearanceIcon.innerHTML = isDark
+      ? '<circle cx="12" cy="12" r="4.2"/><line x1="12" y1="2.5" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="21.5"/><line x1="4.9" y1="4.9" x2="6.7" y2="6.7"/><line x1="17.3" y1="17.3" x2="19.1" y2="19.1"/><line x1="2.5" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="21.5" y2="12"/><line x1="4.9" y1="19.1" x2="6.7" y2="17.3"/><line x1="17.3" y1="6.7" x2="19.1" y2="4.9"/>'
+      : '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>';
+  }
+  if (el.valAppearance) {
+    el.valAppearance.textContent = t('appearanceOpts')[state.appearance] || state.appearance;
+  }
+  if (el.appearanceSeg) {
+    el.appearanceSeg.querySelectorAll('button').forEach((btn) => {
+      const active = btn.dataset.appearance === state.appearance;
+      btn.classList.toggle('active', active);
+      btn.setAttribute('aria-pressed', String(active));
+      const lbl = t('appearanceOpts')[btn.dataset.appearance];
+      if (lbl) btn.textContent = lbl;
+    });
+  }
+}
+
+function setAppearance(mode) {
+  state.appearance = mode;
+  try { localStorage.setItem(APPEARANCE_KEY, mode); } catch { /* ignore */ }
+  applyAppearance();
+}
+
 function t(key) {
   return COPY[state.lang]?.[key] ?? COPY.vi[key];
 }
@@ -76,18 +152,23 @@ function sendToPreview(obj) {
 }
 
 let toastTimer = null;
-function showToast(msg, actionLabel = null, onAction = null) {
+function showToast(msg, actionLabel = null, onAction = null, durationMs = 4400) {
   el.toastText.textContent = msg;
   if (actionLabel && onAction) {
     el.toastAction.textContent = actionLabel;
     el.toastAction.style.display = 'inline-block';
-    el.toastAction.onclick = onAction;
+    el.toastAction.onclick = () => {
+      clearTimeout(toastTimer);
+      el.toast.classList.remove('visible');
+      onAction();
+    };
   } else {
     el.toastAction.style.display = 'none';
+    el.toastAction.onclick = null;
   }
   el.toast.classList.add('visible');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.toast.classList.remove('visible'), 4200);
+  toastTimer = setTimeout(() => el.toast.classList.remove('visible'), durationMs);
 }
 
 function getThemeObj(id = state.themeId) {
@@ -108,6 +189,10 @@ function ensureThemeParams(themeObj) {
   return bag;
 }
 
+function isBinaryToggleParam(param) {
+  return Array.isArray(param?.options?.vi) && param.options.vi.length === 2;
+}
+
 function formatValue(param, val) {
   if (param.options) {
     const opts = param.options[state.lang] || param.options.vi;
@@ -119,18 +204,20 @@ function formatValue(param, val) {
   return String(Math.round(val));
 }
 
-function loadPreviewForTheme(themeObj) {
+function loadPreviewForTheme(themeObj, forceReload = false) {
   if (!themeObj) return;
-  state.previewReady = false;
-  el.previewLoading.classList.remove('hidden');
-  const targetSrc = `${themeObj.page}?preview=1`;
-  if (!el.previewFrame.getAttribute('src') || !el.previewFrame.getAttribute('src').endsWith(targetSrc)) {
-    el.previewFrame.src = targetSrc;
-  } else {
-    state.previewReady = true;
-    el.previewLoading.classList.add('hidden');
-    syncPreviewState();
+  if (!forceReload && state.previewPage === themeObj.page) {
+    if (state.previewReady) {
+      el.previewLoading.classList.add('hidden');
+      syncPreviewState();
+    }
+    return;
   }
+  state.previewReady = false;
+  state.previewPage = themeObj.page;
+  el.previewLoading.classList.remove('hidden');
+  const bust = forceReload ? `&r=${Date.now()}` : '';
+  el.previewFrame.src = `${themeObj.page}?preview=1${bust}`;
 }
 
 function syncPreviewState() {
@@ -141,6 +228,68 @@ function syncPreviewState() {
   if (state.latestIconsMsg) {
     sendToPreview(state.latestIconsMsg);
   }
+  sendToPreview({ t: 'pause', v: state.manualPause, manual: true });
+}
+
+function syncQuickTimeDock() {
+  const themeObj = getThemeObj();
+  const hasTimeMode = !!themeObj?.groups?.some((g) => g.params?.some((p) => p.key === 'timeMode'));
+  el.quickTimeDock.classList.toggle('hidden', !hasTimeMode);
+  if (!hasTimeMode) return;
+  const bag = ensureThemeParams(themeObj);
+  const curMode = Math.round(bag.timeMode ?? 0);
+  const titles = t('timeQuickTitles');
+  el.quickTimeDock.querySelectorAll('button[data-time]').forEach((btn) => {
+    const idx = Number(btn.dataset.time);
+    const active = idx === curMode;
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-pressed', String(active));
+    if (titles[idx]) {
+      btn.title = titles[idx];
+      btn.setAttribute('aria-label', titles[idx]);
+    }
+  });
+}
+
+function updateParamValue(key, val, { syncInspector = true } = {}) {
+  const themeObj = getThemeObj();
+  if (!themeObj) return;
+  const bag = ensureThemeParams(themeObj);
+  bag[key] = val;
+  sendToHost({ t: 'set', k: key, v: val });
+  sendToPreview({ t: 'settings', v: { [key]: val } });
+  if (key === 'timeMode') syncQuickTimeDock();
+  if (syncInspector) {
+    refreshDependentStates();
+  }
+}
+
+function refreshDependentStates() {
+  const themeObj = getThemeObj();
+  if (!themeObj) return;
+  const bag = ensureThemeParams(themeObj);
+  for (const [depKey, rule] of Object.entries(PARAM_DEPS)) {
+    const row = el.paramsContainer.querySelector(`.param-row[data-param-key="${depKey}"]`);
+    if (!row) continue;
+    const parentVal = bag[rule.parent];
+    const disabled = parentVal !== undefined && Number(parentVal) < rule.min;
+    row.classList.toggle('is-disabled', disabled);
+    row.querySelectorAll('input, button').forEach((ctrl) => {
+      ctrl.disabled = disabled;
+    });
+  }
+}
+
+function switchTab(tabName) {
+  state.activeTab = tabName === 'system' ? 'system' : 'scene';
+  const isScene = state.activeTab === 'scene';
+  el.tabBtnScene.classList.toggle('active', isScene);
+  el.tabBtnScene.setAttribute('aria-selected', String(isScene));
+  el.tabBtnSystem.classList.toggle('active', !isScene);
+  el.tabBtnSystem.setAttribute('aria-selected', String(!isScene));
+  el.tabPanelScene.hidden = !isScene;
+  el.tabPanelSystem.hidden = isScene;
+  el.btnReset.style.visibility = isScene ? 'visible' : 'hidden';
 }
 
 function applyStaticCopy() {
@@ -148,6 +297,12 @@ function applyStaticCopy() {
   document.body.setAttribute('data-theme', state.themeId);
 
   el.statusDot.classList.toggle('paused', state.paused);
+  el.previewBadgeDot.classList.toggle('paused', state.manualPause);
+  el.previewPausedOverlay.classList.toggle('visible', state.manualPause);
+  el.previewPausedOverlay.setAttribute('aria-hidden', String(!state.manualPause));
+  el.previewPausedText.textContent = t('paused');
+  el.previewLoadingText.textContent = t('loadingPreview');
+
   el.statusText.textContent = hasHost
     ? (state.paused ? t('paused') : t('running'))
     : t('previewOnly');
@@ -163,15 +318,29 @@ function applyStaticCopy() {
     ? '<polygon points="6 4 20 12 6 20 6 4"/>'
     : '<rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/>';
   el.btnReloadLabel.textContent = t('reload');
+  el.btnAppearance.title = t('appearanceToggleHint');
+  el.btnAppearance.setAttribute('aria-label', t('appearanceToggleHint'));
   el.btnTrayLabel.textContent = t('hideTray');
   el.btnTray.style.display = hasHost ? 'inline-flex' : 'none';
   el.btnFullscreen.title = t('fullscreen');
   el.btnFullscreen.setAttribute('aria-label', t('fullscreen'));
-  el.btnSharePngLabel.textContent = t('sharePng');
-  el.btnShareVideoLabel.textContent = t('shareVideo');
+  if (!state.exporting) {
+    el.btnSharePngLabel.textContent = t('sharePng');
+    el.btnShareVideoLabel.textContent = t('shareVideo');
+  }
+
+  el.tabBtnScene.textContent = t('tabScene');
+  el.tabBtnSystem.textContent = t('tabSystem');
   document.getElementById('themes-heading').textContent = t('themesHeading');
-  document.getElementById('inspector-title').textContent = t('customize');
   document.getElementById('lbl-system-group').textContent = t('systemGroup');
+  document.getElementById('lbl-appearance-group').textContent = t('appearanceGroup');
+  document.getElementById('lbl-appearance').textContent = t('appearanceLabel');
+  document.getElementById('hint-appearance').textContent = t('appearanceHint');
+  document.getElementById('lbl-shortcuts-group').textContent = t('shortcutsGroup');
+  document.getElementById('lbl-sc-night').textContent = t('scNight');
+  document.getElementById('lbl-sc-pause').textContent = t('scPause');
+  document.getElementById('lbl-sc-settings').textContent = t('scSettings');
+
   el.btnResetLabel.textContent = t('reset');
   document.getElementById('lbl-autopause').textContent = t('autopause');
   document.getElementById('hint-autopause').textContent = t('autopauseHint');
@@ -187,6 +356,9 @@ function applyStaticCopy() {
   document.querySelectorAll('.lang-pill button').forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.lang === state.lang);
   });
+
+  applyAppearance();
+  syncQuickTimeDock();
 }
 
 function renderThemes() {
@@ -201,6 +373,7 @@ function renderThemes() {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'theme-card' + (theme.id === state.themeId ? ' active' : '');
+    btn.setAttribute('aria-pressed', String(theme.id === state.themeId));
     btn.title = fullDesc;
     btn.innerHTML = `
       <div class="theme-thumb">
@@ -217,17 +390,19 @@ function renderThemes() {
     btn.addEventListener('click', () => {
       if (state.themeId === theme.id) return;
       state.themeId = theme.id;
+      state.lastResetSnapshot = null;
       sendToHost({ t: 'theme', id: theme.id });
-      renderAll();
+      renderAll({ preserveScroll: false });
       loadPreviewForTheme(theme);
     });
     el.themeGrid.appendChild(btn);
   }
 }
 
-function renderParams() {
+function renderParams({ preserveScroll = true } = {}) {
   const themeObj = getThemeObj();
   if (!themeObj) return;
+  const savedScroll = preserveScroll && el.inspectorScroll ? el.inspectorScroll.scrollTop : 0;
   const bag = ensureThemeParams(themeObj);
   el.paramsContainer.innerHTML = '';
 
@@ -245,15 +420,60 @@ function renderParams() {
 
     for (const param of group.params || []) {
       const curVal = bag[param.key] ?? param.default;
+      const ctrlId = `param-${themeObj.id}-${param.key}`;
+      const labelText = param.label[state.lang] || param.label.vi;
+      const hintText = param.hint ? (param.hint[state.lang] || param.hint.vi) : '';
+
+      if (isBinaryToggleParam(param)) {
+        // Compact 1-row native spring toggle for 2-state On/Off & Show/Hide params!
+        const row = document.createElement('div');
+        row.className = 'switch-row param-row';
+        row.dataset.paramKey = param.key;
+
+        const copyWrap = document.createElement('span');
+        copyWrap.className = 'switch-row-copy';
+        const lbl = document.createElement('label');
+        lbl.className = 'switch-title';
+        lbl.id = `${ctrlId}-lbl`;
+        lbl.htmlFor = ctrlId;
+        lbl.textContent = labelText;
+        copyWrap.appendChild(lbl);
+
+        if (hintText) {
+          const small = document.createElement('small');
+          small.textContent = hintText;
+          copyWrap.appendChild(small);
+        }
+
+        const tog = document.createElement('button');
+        tog.type = 'button';
+        tog.id = ctrlId;
+        tog.className = 'toggle';
+        tog.setAttribute('role', 'switch');
+        tog.setAttribute('aria-labelledby', lbl.id);
+        tog.setAttribute('aria-checked', String(Math.round(curVal) >= 1));
+        tog.addEventListener('click', () => {
+          const next = Math.round(bag[param.key] ?? param.default) >= 1 ? 0 : 1;
+          tog.setAttribute('aria-checked', String(next === 1));
+          updateParamValue(param.key, next);
+        });
+
+        row.append(copyWrap, tog);
+        card.appendChild(row);
+        continue;
+      }
+
       const row = document.createElement('div');
       row.className = 'param-row';
+      row.dataset.paramKey = param.key;
 
       const top = document.createElement('div');
       top.className = 'param-top';
 
       const lbl = document.createElement('label');
       lbl.className = 'param-label';
-      lbl.textContent = param.label[state.lang] || param.label.vi;
+      lbl.id = `${ctrlId}-lbl`;
+      lbl.textContent = labelText;
 
       const valEl = document.createElement('span');
       valEl.className = 'param-val';
@@ -262,35 +482,43 @@ function renderParams() {
       top.append(lbl, valEl);
       row.appendChild(top);
 
-      if (param.hint) {
+      if (hintText) {
         const hint = document.createElement('div');
         hint.className = 'param-hint';
-        hint.textContent = param.hint[state.lang] || param.hint.vi;
+        hint.textContent = hintText;
         row.appendChild(hint);
       }
 
       if (param.options) {
         const seg = document.createElement('div');
         seg.className = 'seg-control';
+        seg.setAttribute('role', 'radiogroup');
+        seg.setAttribute('aria-labelledby', lbl.id);
         const opts = param.options[state.lang] || param.options.vi;
         seg.style.setProperty('--cols', String(opts.length));
         opts.forEach((optText, idx) => {
           const ob = document.createElement('button');
           ob.type = 'button';
           ob.textContent = optText;
-          ob.classList.toggle('active', Math.round(curVal) === idx);
+          ob.title = optText;
+          const isActive = Math.round(curVal) === idx;
+          ob.classList.toggle('active', isActive);
+          ob.setAttribute('aria-pressed', String(isActive));
           ob.addEventListener('click', () => {
-            bag[param.key] = idx;
             valEl.textContent = formatValue(param, idx);
-            seg.querySelectorAll('button').forEach((b, bi) => b.classList.toggle('active', bi === idx));
-            sendToHost({ t: 'set', k: param.key, v: idx });
-            sendToPreview({ t: 'settings', v: { [param.key]: idx } });
+            seg.querySelectorAll('button').forEach((b, bi) => {
+              b.classList.toggle('active', bi === idx);
+              b.setAttribute('aria-pressed', String(bi === idx));
+            });
+            updateParamValue(param.key, idx);
           });
           seg.appendChild(ob);
         });
         row.appendChild(seg);
       } else {
+        lbl.htmlFor = ctrlId;
         const input = document.createElement('input');
+        input.id = ctrlId;
         input.type = 'range';
         input.min = String(param.min);
         input.max = String(param.max);
@@ -303,11 +531,9 @@ function renderParams() {
         setFill(curVal);
         input.addEventListener('input', () => {
           const nv = Number(input.value);
-          bag[param.key] = nv;
           valEl.textContent = formatValue(param, nv);
           setFill(nv);
-          sendToHost({ t: 'set', k: param.key, v: nv });
-          sendToPreview({ t: 'settings', v: { [param.key]: nv } });
+          updateParamValue(param.key, nv, { syncInspector: false });
         });
         row.appendChild(input);
       }
@@ -317,12 +543,34 @@ function renderParams() {
     sec.appendChild(card);
     el.paramsContainer.appendChild(sec);
   }
+
+  refreshDependentStates();
+  if (el.inspectorScroll) {
+    el.inspectorScroll.scrollTop = preserveScroll ? savedScroll : 0;
+  }
 }
 
-function renderAll() {
+function renderAll({ preserveScroll = true } = {}) {
   applyStaticCopy();
   renderThemes();
-  renderParams();
+  renderParams({ preserveScroll });
+}
+
+let shareWatchdog = null;
+function setExportingState(kind) {
+  state.exporting = !!kind;
+  el.btnSharePng.disabled = state.exporting;
+  el.btnShareVideo.disabled = state.exporting;
+  el.btnSharePngLabel.textContent = kind === 'image' ? t('capturing') : t('sharePng');
+  el.btnShareVideoLabel.textContent = kind === 'video' ? t('recording') : t('shareVideo');
+  clearTimeout(shareWatchdog);
+  if (state.exporting) {
+    shareWatchdog = setTimeout(() => {
+      if (!state.exporting) return;
+      setExportingState(null);
+      showToast(t('shareTimeout'));
+    }, 12000);
+  }
 }
 
 function bindEvents() {
@@ -333,6 +581,7 @@ function bindEvents() {
       state.manualPause = !state.manualPause;
       state.paused = state.manualPause;
       applyStaticCopy();
+      sendToPreview({ t: 'pause', v: state.manualPause, manual: true });
     }
   });
 
@@ -340,22 +589,76 @@ function bindEvents() {
     sendToHost({ t: 'reload' });
     const themeObj = getThemeObj();
     if (themeObj) {
-      el.previewFrame.src = `${themeObj.page}?preview=1&r=${Date.now()}`;
+      loadPreviewForTheme(themeObj, true);
     }
     showToast(t('reloadToast'));
   });
 
+  el.btnAppearance.addEventListener('click', () => {
+    setAppearance(resolveDarkAppearance() ? 'light' : 'dark');
+  });
+
+  el.appearanceSeg.querySelectorAll('button[data-appearance]').forEach((btn) => {
+    btn.addEventListener('click', () => setAppearance(btn.dataset.appearance));
+  });
+
+  if (darkMedia && typeof darkMedia.addEventListener === 'function') {
+    darkMedia.addEventListener('change', () => {
+      if (state.appearance === 'auto') applyAppearance();
+    });
+  }
+
   el.btnTray.addEventListener('click', () => sendToHost({ t: 'minimizeToTray' }));
 
+  el.tabBtnScene.addEventListener('click', () => switchTab('scene'));
+  el.tabBtnSystem.addEventListener('click', () => switchTab('system'));
+
+  // Quick Time-of-Day Pill inside Preview HUD
+  el.quickTimeDock.querySelectorAll('button[data-time]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const idx = Number(btn.dataset.time);
+      updateParamValue('timeMode', idx);
+      // Sync inspector timeMode segmented control without resetting scroll position
+      const row = el.paramsContainer.querySelector('.param-row[data-param-key="timeMode"]');
+      if (row) {
+        const themeObj = getThemeObj();
+        const param = themeObj?.groups?.flatMap((g) => g.params || []).find((p) => p.key === 'timeMode');
+        const valEl = row.querySelector('.param-val');
+        if (valEl && param) valEl.textContent = formatValue(param, idx);
+        row.querySelectorAll('.seg-control button').forEach((b, bi) => {
+          b.classList.toggle('active', bi === idx);
+          b.setAttribute('aria-pressed', String(bi === idx));
+        });
+      }
+    });
+  });
+
+  // Reset with 1-Click Undo Toast!
   el.btnReset.addEventListener('click', () => {
     const themeObj = getThemeObj();
     if (!themeObj) return;
+    const prevBag = { ...ensureThemeParams(themeObj) };
+    state.lastResetSnapshot = { themeId: themeObj.id, params: prevBag };
+
     delete state.paramsByTheme[themeObj.id];
     const fresh = ensureThemeParams(themeObj);
     sendToHost({ t: 'reset' });
     sendToPreview({ t: 'settings', v: fresh });
-    renderParams();
-    showToast(t('resetToast'));
+    renderParams({ preserveScroll: true });
+    syncQuickTimeDock();
+
+    showToast(t('resetToast'), t('undo'), () => {
+      if (!state.lastResetSnapshot || state.lastResetSnapshot.themeId !== state.themeId) return;
+      const restore = { ...state.lastResetSnapshot.params };
+      state.paramsByTheme[state.themeId] = restore;
+      for (const [k, v] of Object.entries(restore)) {
+        sendToHost({ t: 'set', k, v: Number(v) });
+      }
+      sendToPreview({ t: 'settings', v: restore });
+      renderParams({ preserveScroll: true });
+      syncQuickTimeDock();
+      showToast(t('undoToast'), null, null, 2800);
+    }, 6000);
   });
 
   document.querySelectorAll('.lang-pill button').forEach((btn) => {
@@ -364,7 +667,7 @@ function bindEvents() {
       if (state.lang === nextLang) return;
       state.lang = nextLang;
       sendToHost({ t: 'lang', v: nextLang });
-      renderAll();
+      renderAll({ preserveScroll: true });
     });
   });
 
@@ -403,8 +706,8 @@ function bindEvents() {
       showToast(t('hostRequired'));
       return;
     }
-    el.btnSharePng.disabled = true;
-    el.btnSharePngLabel.textContent = t('capturing');
+    if (state.exporting) return;
+    setExportingState('image');
     sendToHost({ t: 'shareImage' });
   });
 
@@ -413,8 +716,8 @@ function bindEvents() {
       showToast(t('hostRequired'));
       return;
     }
-    el.btnShareVideo.disabled = true;
-    el.btnShareVideoLabel.textContent = t('recording');
+    if (state.exporting) return;
+    setExportingState('video');
     sendToHost({ t: 'shareVideo' });
   });
 
@@ -440,7 +743,8 @@ function bindEvents() {
 
       switch (msg.t) {
         case 'init': {
-          const themeChanged = msg.theme && msg.theme !== state.themeId;
+          const prevTheme = state.themeId;
+          state.hostInitialized = true;
           if (msg.theme) state.themeId = msg.theme;
           if (msg.lang) state.lang = msg.lang;
           if (msg.paramsByTheme) state.paramsByTheme = msg.paramsByTheme;
@@ -451,9 +755,11 @@ function bindEvents() {
           state.paused = !!msg.paused;
           state.manualPause = !!msg.manualPause;
           if (typeof msg.iconCount === 'number') state.iconCount = msg.iconCount;
-          renderAll();
-          if (themeChanged || !el.previewFrame.getAttribute('src')) {
-            loadPreviewForTheme(getThemeObj());
+
+          renderAll({ preserveScroll: prevTheme === state.themeId });
+          const themeObj = getThemeObj();
+          if (themeObj && state.previewPage !== themeObj.page) {
+            loadPreviewForTheme(themeObj);
           } else {
             syncPreviewState();
           }
@@ -468,6 +774,7 @@ function bindEvents() {
           state.manualPause = !!msg.manualPause;
           if (typeof msg.iconCount === 'number') state.iconCount = msg.iconCount;
           applyStaticCopy();
+          sendToPreview({ t: 'pause', v: state.manualPause, manual: true });
           break;
 
         case 'icons':
@@ -478,10 +785,7 @@ function bindEvents() {
           break;
 
         case 'shareResult':
-          el.btnSharePng.disabled = false;
-          el.btnShareVideo.disabled = false;
-          el.btnSharePngLabel.textContent = t('sharePng');
-          el.btnShareVideoLabel.textContent = t('shareVideo');
+          setExportingState(null);
           if (msg.ok) {
             showToast(t('shareOk')(msg.info), t('openFolder'), () => {
               sendToHost({ t: 'revealFile', path: msg.path });
@@ -499,13 +803,27 @@ function bindEvents() {
 
 async function boot() {
   el.errorBox.classList.remove('visible');
+  applyAppearance();
   try {
     const res = await fetch('./themes.json', { cache: 'no-store' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     state.manifest = await res.json();
-    renderAll();
-    loadPreviewForTheme(getThemeObj());
-    sendToHost({ t: 'hello' });
+
+    if (hasHost) {
+      // Wait for C# 'init' before loading WebGL preview -> ZERO double-load flash!
+      renderThemes();
+      applyStaticCopy();
+      sendToHost({ t: 'hello' });
+      setTimeout(() => {
+        if (!state.hostInitialized && !state.previewPage) {
+          renderAll({ preserveScroll: false });
+          loadPreviewForTheme(getThemeObj());
+        }
+      }, 650);
+    } else {
+      renderAll({ preserveScroll: false });
+      loadPreviewForTheme(getThemeObj());
+    }
   } catch (err) {
     el.errorMsg.textContent = `Không thể nạp themes.json (${err.message})`;
     el.errorBox.classList.add('visible');

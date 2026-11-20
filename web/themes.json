@@ -19,6 +19,16 @@
           "name": { "vi": "Bờ biển & Đảo cát", "en": "Shoreline & Islands" },
           "params": [
             {
+              "key": "timeMode",
+              "label": { "vi": "Thời gian trong ngày", "en": "Time of Day" },
+              "hint": { "vi": "Chuyển giữa nắng ngày, hoàng hôn trên biển, đêm ánh trăng hoặc tự động theo giờ máy", "en": "Switch between sunlit day, golden coastal sunset, moonlit night, or auto local time" },
+              "options": {
+                "vi": ["Ban ngày", "Hoàng hôn", "Ban đêm", "Tự động"],
+                "en": ["Day", "Sunset", "Night", "Auto"]
+              },
+              "default": 0
+            },
+            {
               "key": "sigma",
               "label": { "vi": "Khoảng cách bờ", "en": "Shore Margin" },
               "hint": { "vi": "Độ rộng bãi cát bao quanh từng icon", "en": "How far the sand shoreline extends around icons" },
@@ -324,6 +334,16 @@
               "step": 0.05,
               "default": 1.0,
               "format": "times"
+            },
+            {
+              "key": "showMeteors",
+              "label": { "vi": "Sao băng", "en": "Shooting Stars" },
+              "hint": { "vi": "Những vệt sao băng lướt qua bầu trời sao lúc Hoàng hôn và Ban đêm", "en": "Delicate shooting stars streaking across the starry twilight and night sky" },
+              "options": {
+                "vi": ["Ẩn", "Hiện"],
+                "en": ["Hide", "Show"]
+              },
+              "default": 1
             }
           ]
         },
@@ -359,6 +379,137 @@
               "step": 1,
               "default": 22,
               "unit": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "skyship",
+      "page": "skyship.html",
+      "status": "ready",
+      "name": {
+        "vi": "Tàu giữa Biển Mây",
+        "en": "Sky Galleon & Cloud Sea"
+      },
+      "desc": {
+        "vi": "Chiến thuyền buồm cổ rẽ biển mây ráng chiều dưới bầu trời sao, cùng thuyền hộ tống và tàu lượn cánh chim né cụm mây icon.",
+        "en": "An antique flying galleon plowing through a golden cloud sea under twilight stars, with an escort skiff and soaring winged glider."
+      },
+      "accent": "#2E5A88",
+      "groups": [
+        {
+          "name": { "vi": "Bầu trời & Biển mây", "en": "Sky & Cloud Sea" },
+          "params": [
+            {
+              "key": "timeMode",
+              "label": { "vi": "Thời gian trong ngày", "en": "Time of Day" },
+              "hint": { "vi": "Chuyển giữa trời xanh nắng ngày, hoàng hôn sao sớm, đêm trăng ngân hà hoặc tự động theo giờ", "en": "Switch between crisp sky day, twilight sunset stars, moonlit night, or auto local time" },
+              "options": {
+                "vi": ["Ban ngày", "Hoàng hôn", "Ban đêm", "Tự động"],
+                "en": ["Day", "Sunset", "Night", "Auto"]
+              },
+              "default": 1
+            },
+            {
+              "key": "cloudSea",
+              "label": { "vi": "Độ dày biển mây", "en": "Cloud Sea Depth" },
+              "hint": { "vi": "Độ bồng bềnh của tầng mây cuộn dưới thân tàu và hai bên chân trời", "en": "Volume of billowing cloud banks framing the sky galleon" },
+              "min": 0.25,
+              "max": 1.0,
+              "step": 0.05,
+              "default": 0.78,
+              "format": "percent"
+            },
+            {
+              "key": "flow",
+              "label": { "vi": "Tốc độ gió trời", "en": "Sky Breeze" },
+              "hint": { "vi": "Tốc độ mây trôi, độ phồng rung cánh buồm và nhịp chao liệng tàu bay", "en": "Speed of drifting clouds, billowing sails, and aerial sway" },
+              "min": 0,
+              "max": 2.4,
+              "step": 0.05,
+              "default": 1.0,
+              "format": "times"
+            },
+            {
+              "key": "showMeteors",
+              "label": { "vi": "Sao băng", "en": "Shooting Stars" },
+              "hint": { "vi": "Những vệt sao băng lướt qua bầu trời sao lúc Hoàng hôn và Ban đêm", "en": "Delicate shooting stars streaking across the starry twilight and night sky" },
+              "options": {
+                "vi": ["Ẩn", "Hiện"],
+                "en": ["Hide", "Show"]
+              },
+              "default": 1
+            }
+          ]
+        },
+        {
+          "name": { "vi": "Mây quanh biểu tượng", "en": "Icon Clouds" },
+          "params": [
+            {
+              "key": "adaptive",
+              "label": { "vi": "Mây bọc icon", "en": "Adaptive Icon Clouds" },
+              "hint": { "vi": "Tạo cụm mây bay ôm mềm lấy từng icon trên màn hình", "en": "Cradle desktop icons on luminous drifting cloud puffs" },
+              "options": {
+                "vi": ["Tắt", "Bật"],
+                "en": ["Off", "On"]
+              },
+              "default": 1
+            },
+            {
+              "key": "sigma",
+              "label": { "vi": "Kích thước đệm mây", "en": "Cloud Cushion Size" },
+              "hint": { "vi": "Độ nở rộng của cụm mây quanh từng biểu tượng", "en": "How far icon cloud cushions spread outward" },
+              "min": 42,
+              "max": 160,
+              "step": 1,
+              "default": 72,
+              "unit": "px"
+            },
+            {
+              "key": "warp",
+              "label": { "vi": "Độ bồng bềnh", "en": "Cloud Puffiness" },
+              "hint": { "vi": "Độ uốn lượn tự nhiên dọc viền mây quanh icon", "en": "Organic contour billow around icon clouds" },
+              "min": 0,
+              "max": 72,
+              "step": 1,
+              "default": 34,
+              "unit": ""
+            }
+          ]
+        },
+        {
+          "name": { "vi": "Đội tàu bay & Tiền cảnh", "en": "Sky Fleet & Details" },
+          "params": [
+            {
+              "key": "showEscort",
+              "label": { "vi": "Thuyền buồm hộ tống", "en": "Escort Skiff" },
+              "hint": { "vi": "Thuyền buồm bay nhỏ bồng bềnh song hành ở mạn trái", "en": "Small companion flying skiff sailing alongside on the left" },
+              "options": {
+                "vi": ["Ẩn", "Hiện"],
+                "en": ["Hide", "Show"]
+              },
+              "default": 1
+            },
+            {
+              "key": "showGlider",
+              "label": { "vi": "Tàu lượn cánh chim", "en": "Winged Glider" },
+              "hint": { "vi": "Tàu lượn chao nghiêng cánh tự né cụm mây icon ở tiền cảnh", "en": "Soaring winged glider banking smoothly around icon clouds" },
+              "options": {
+                "vi": ["Ẩn", "Hiện"],
+                "en": ["Hide", "Show"]
+              },
+              "default": 1
+            },
+            {
+              "key": "showLookout",
+              "label": { "vi": "Bệ ngắm biển mây", "en": "Cloud Lookout" },
+              "hint": { "vi": "Bệ ván nhỏ nhô ra từ tầng mây phải cùng bóng người đón gió", "en": "Poetic diving-ledge silhouette welcoming the sky breeze on the right cloud bank" },
+              "options": {
+                "vi": ["Ẩn", "Hiện"],
+                "en": ["Hide", "Show"]
+              },
+              "default": 1
             }
           ]
         }

@@ -193,7 +193,7 @@ namespace Scream.Application
                             ScheduleSave();
                             foreach (var wf in _wallpapers) wf.NavigateToPage(def.Page);
                             SyncTrayState();
-                            PushFullInitToSettings();
+                            PushStatusToSettings();
                         }
                         break;
 
@@ -262,6 +262,10 @@ namespace Scream.Application
                             _wallpapers[0].RequestSnapshot((ok, path, info) =>
                                 _settingsForm?.PostObject(new { t = "shareResult", kind = "image", ok, path, info }));
                         }
+                        else
+                        {
+                            _settingsForm?.PostObject(new { t = "shareResult", kind = "image", ok = false, path = "", info = "No active wallpaper" });
+                        }
                         break;
 
                     case "shareVideo":
@@ -270,6 +274,15 @@ namespace Scream.Application
                             _wallpapers[0].RequestRecording((ok, path, info) =>
                                 _settingsForm?.PostObject(new { t = "shareResult", kind = "video", ok, path, info }));
                         }
+                        else
+                        {
+                            _settingsForm?.PostObject(new { t = "shareResult", kind = "video", ok = false, path = "", info = "No active wallpaper" });
+                        }
+                        break;
+
+                    case "uiTheme":
+                        bool isDark = root.TryGetProperty("dark", out var dkEl) && dkEl.GetBoolean();
+                        _settingsForm?.SetDarkMode(isDark);
                         break;
 
                     case "revealFile":
@@ -343,34 +356,15 @@ namespace Scream.Application
         private void ToggleMeadowNight()
         {
             string activeTheme = _store.Current.Theme;
-            if (activeTheme == "castle")
-            {
-                var cur = _store.GetEffectiveParams("castle");
-                double curMode = cur.TryGetValue("timeMode", out var v) ? v : 0;
-                double nextMode = Math.Round(curMode) == 2 ? 0 : 2;
-                _store.SetParam("castle", "timeMode", nextMode);
-                ScheduleSave();
-                foreach (var wf in _wallpapers) wf.SendSingleParam("timeMode", nextMode);
-                SyncTrayState();
-                PushFullInitToSettings();
-                return;
-            }
+            if (activeTheme != "beach" && activeTheme != "meadow" && activeTheme != "castle" && activeTheme != "skyship")
+                activeTheme = "meadow";
 
-            if (activeTheme != "meadow")
-            {
-                var def = _store.GetTheme("meadow");
-                if (def != null)
-                {
-                    _store.Current.Theme = def.Id;
-                    foreach (var wf in _wallpapers) wf.NavigateToPage(def.Page);
-                }
-            }
-            var mCur = _store.GetEffectiveParams("meadow");
-            double mMode = mCur.TryGetValue("timeMode", out var mv) ? mv : 0;
-            double mNext = Math.Round(mMode) == 2 ? 0 : 2;
-            _store.SetParam("meadow", "timeMode", mNext);
+            var cur = _store.GetEffectiveParams(activeTheme);
+            double curMode = cur.TryGetValue("timeMode", out var v) ? v : 0;
+            double nextMode = Math.Round(curMode) == 2 ? 0 : 2;
+            _store.SetParam(activeTheme, "timeMode", nextMode);
             ScheduleSave();
-            foreach (var wf in _wallpapers) wf.SendSingleParam("timeMode", mNext);
+            foreach (var wf in _wallpapers) wf.SendSingleParam("timeMode", nextMode);
             SyncTrayState();
             PushFullInitToSettings();
         }
@@ -400,8 +394,7 @@ namespace Scream.Application
         {
             string th = _store.Current.Theme;
             var tp = _store.GetEffectiveParams(th);
-            bool isNight = (th == "meadow" && tp.TryGetValue("timeMode", out var mt) && Math.Round(mt) == 2)
-                        || (th == "castle" && tp.TryGetValue("timeMode", out var ct) && Math.Round(ct) == 2);
+            bool isNight = tp.TryGetValue("timeMode", out var mt) && Math.Round(mt) == 2;
             _tray.SyncState(_store.Current.Lang, isNight, _manualPause, _store.Current.MultiMonitor);
         }
 

@@ -46,6 +46,8 @@ uniform float uWaves;
 uniform float uShoal;
 uniform float uShallow;
 uniform float uSigma;
+uniform float uSunset;
+uniform float uNight;
 uniform float uSeed;
 
 uniform float uKayN;
@@ -56,12 +58,26 @@ uniform vec4 uBird[8];    // x, y, heading, wingSpan
 
 out vec4 fragColor;
 
-// Japanese gouache / print coastal palette
+// 1. Daytime Japanese gouache / print coastal palette
 const vec3 SEA0 = vec3(0.74, 0.93, 0.87);
 const vec3 SEA1 = vec3(0.47, 0.87, 0.84);
 const vec3 SEA2 = vec3(0.17, 0.76, 0.81);
 const vec3 SEA3 = vec3(0.03, 0.66, 0.79);
 const vec3 SEA4 = vec3(0.00, 0.56, 0.73);
+
+// 2. Golden-Hour Coastal Sunset palette (Porco Rosso / Kazuo Oga: jewel jade shallows -> deep marine slate-indigo)
+const vec3 S_SEA0 = vec3(0.62, 0.78, 0.68);
+const vec3 S_SEA1 = vec3(0.34, 0.60, 0.60);
+const vec3 S_SEA2 = vec3(0.16, 0.39, 0.50);
+const vec3 S_SEA3 = vec3(0.10, 0.24, 0.39);
+const vec3 S_SEA4 = vec3(0.075, 0.16, 0.31);
+
+// 3. Moonlit Night Coastal palette (translucent aqua-silver shallows -> velvet Prussian midnight ocean)
+const vec3 N_SEA0 = vec3(0.16, 0.38, 0.46);
+const vec3 N_SEA1 = vec3(0.09, 0.24, 0.38);
+const vec3 N_SEA2 = vec3(0.045, 0.14, 0.29);
+const vec3 N_SEA3 = vec3(0.028, 0.088, 0.22);
+const vec3 N_SEA4 = vec3(0.018, 0.055, 0.155);
 
 const vec3 SAND0   = vec3(0.97, 0.93, 0.88);
 const vec3 SAND1   = vec3(0.91, 0.85, 0.83);
@@ -70,7 +86,25 @@ const vec3 SAND3   = vec3(0.72, 0.68, 0.75);
 const vec3 WETSAND = vec3(0.93, 0.86, 0.72);
 const vec3 FOAM    = vec3(0.98, 0.99, 0.98);
 
+const vec3 S_SAND0 = vec3(0.86, 0.71, 0.56);
+const vec3 S_SAND1 = vec3(0.74, 0.58, 0.50);
+const vec3 S_SAND2 = vec3(0.60, 0.47, 0.48);
+const vec3 S_SAND3 = vec3(0.46, 0.39, 0.46);
+const vec3 S_FOAM  = vec3(0.98, 0.87, 0.75);
+
+const vec3 N_SAND0 = vec3(0.34, 0.43, 0.54);
+const vec3 N_SAND1 = vec3(0.25, 0.33, 0.45);
+const vec3 N_SAND2 = vec3(0.18, 0.25, 0.38);
+const vec3 N_SAND3 = vec3(0.12, 0.18, 0.31);
+const vec3 N_FOAM  = vec3(0.64, 0.82, 0.94);
+
 ${GULL_COMMON_GLSL}
+
+vec3 moodMix(vec3 dayC, vec3 sunC, vec3 ngtC, float sunset, float night) {
+  float dayW = max(0.0, 1.0 - sunset - night);
+  float sumW = max(0.001, dayW + sunset + night);
+  return (dayC * dayW + sunC * sunset + ngtC * night) / sumW;
+}
 
 float hash(vec2 p) {
   p = fract(p * vec2(123.34, 456.21));
@@ -98,19 +132,28 @@ float SF(vec2 p) {
   return mix(texture(uFA, uv).r, texture(uFB, uv).r, uMix);
 }
 
-vec3 seaRamp(float v) {
+vec3 seaRamp(float v, float sunset, float night) {
+  vec3 c0 = moodMix(SEA0, S_SEA0, N_SEA0, sunset, night);
+  vec3 c1 = moodMix(SEA1, S_SEA1, N_SEA1, sunset, night);
+  vec3 c2 = moodMix(SEA2, S_SEA2, N_SEA2, sunset, night);
+  vec3 c3 = moodMix(SEA3, S_SEA3, N_SEA3, sunset, night);
+  vec3 c4 = moodMix(SEA4, S_SEA4, N_SEA4, sunset, night);
   v = clamp(v, 0.0, 1.0) * 4.0;
-  if (v < 1.0) return mix(SEA0, SEA1, v);
-  if (v < 2.0) return mix(SEA1, SEA2, v - 1.0);
-  if (v < 3.0) return mix(SEA2, SEA3, v - 2.0);
-  return mix(SEA3, SEA4, v - 3.0);
+  if (v < 1.0) return mix(c0, c1, v);
+  if (v < 2.0) return mix(c1, c2, v - 1.0);
+  if (v < 3.0) return mix(c2, c3, v - 2.0);
+  return mix(c3, c4, v - 3.0);
 }
 
-vec3 sandRamp(float v) {
+vec3 sandRamp(float v, float sunset, float night) {
+  vec3 c0 = moodMix(SAND0, S_SAND0, N_SAND0, sunset, night);
+  vec3 c1 = moodMix(SAND1, S_SAND1, N_SAND1, sunset, night);
+  vec3 c2 = moodMix(SAND2, S_SAND2, N_SAND2, sunset, night);
+  vec3 c3 = moodMix(SAND3, S_SAND3, N_SAND3, sunset, night);
   v = clamp(v, 0.0, 1.0) * 3.0;
-  if (v < 1.0) return mix(SAND0, SAND1, v);
-  if (v < 2.0) return mix(SAND1, SAND2, v - 1.0);
-  return mix(SAND2, SAND3, v - 2.0);
+  if (v < 1.0) return mix(c0, c1, v);
+  if (v < 2.0) return mix(c1, c2, v - 1.0);
+  return mix(c2, c3, v - 2.0);
 }
 
 vec2 worley(vec2 p) {
@@ -154,7 +197,37 @@ vec2 paddleSD(vec2 q, float ph) {
 
 void main() {
   vec2 p = vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y) / uDpr;
+  vec2 cssRes = max(vec2(1.0), uRes / uDpr);
+  float nx = p.x / cssRes.x;
+  float ny = p.y / cssRes.y;
   float t = uTime;
+  float sunset = clamp(uSunset, 0.0, 1.0);
+  float night  = clamp(uNight,  0.0, 1.0);
+  float diag = clamp(nx * 0.62 + ny * 0.56, 0.0, 1.0);
+
+  // Harmonized foam & wet-sand sky-mirror reflection tints
+  vec3 foamCol = moodMix(FOAM, S_FOAM, N_FOAM, sunset, night);
+  vec3 wetSunMirror = mix(vec3(0.92, 0.68, 0.50), vec3(0.52, 0.44, 0.52), diag * 0.75);
+  vec3 wetNgtMirror = mix(vec3(0.24, 0.36, 0.50), vec3(0.10, 0.17, 0.30), diag * 0.75);
+  vec3 wetCol = moodMix(WETSAND, wetSunMirror, wetNgtMirror, sunset, night);
+
+  // Diagonal upper-left solar/lunar reflection corridor across open sea
+  float sunPath = 0.0;
+  if (sunset > 0.01) {
+    vec2 rS = p - vec2(-cssRes.x * 0.10, -cssRes.y * 0.08);
+    float alS = dot(rS, normalize(vec2(0.74, 0.67)));
+    float acS = dot(rS, normalize(vec2(-0.67, 0.74)));
+    float coneS = 110.0 + max(0.0, alS) * 0.42;
+    sunPath = exp(-pow(acS / coneS, 2.0) * 1.15) * (1.0 - ss(cssRes.x * 0.38, cssRes.x * 1.25, alS));
+  }
+  float moonPath = 0.0;
+  if (night > 0.01) {
+    vec2 rM = p - vec2(-cssRes.x * 0.08, -cssRes.y * 0.08);
+    float alM = dot(rM, normalize(vec2(0.68, 0.73)));
+    float acM = dot(rM, normalize(vec2(-0.73, 0.68)));
+    float coneM = 100.0 + max(0.0, alM) * 0.38;
+    moonPath = exp(-pow(acM / coneM, 2.0) * 1.25) * (1.0 - ss(cssRes.x * 0.34, cssRes.x * 1.18, alM));
+  }
 
   // Stationary ~1.3px screen-pixel risograph/gouache stipple grain
   vec2 gp = floor(p * (0.78 * max(uDpr, 1.0)));
@@ -191,16 +264,30 @@ void main() {
 
   vec3 col;
   if (s > 2.0) {
-    // ---------- OCEAN WITH STIPPLED BATHYMETRY & SUN GLITTER ----------
+    // ---------- OCEAN WITH STIPPLED BATHYMETRY, SKY REFLECTION & SUN/MOON GLITTER ----------
     float depth = pow(clamp(max(s - uShoal * 0.45, 0.0) / max(80.0, uShallow * 1.25), 0.0, 1.0), 0.62);
-    col = seaRamp(depth + (g1 - 0.5) * 0.085);
+    col = seaRamp(depth + (g1 - 0.5) * 0.085, sunset, night);
 
     vec2 drift = vec2(t * 2.2, t * 0.9);
     float deepK = ss(uShallow * 0.35, uShallow * 1.1, s);
-    col *= 1.0 + (N(p + drift * 4.0, 1600.0).r - 0.5) * 0.07 * ss(0.0, uShoal + 40.0, s);
+    float swellNoise = N(p + drift * 4.0, 1600.0).r;
+    col *= 1.0 + (swellNoise - 0.5) * 0.07 * ss(0.0, uShoal + 40.0, s);
 
-    // Two rotated jittered glitter lattices clustered by large noise
-    float glitterMask = ss(0.34, 0.74, N(p + drift * 3.0, 520.0).g) * deepK;
+    // Grazing aerial sky reflection & silky molten sun-path (Sunset) / silver moon-path (Night)
+    if (sunset > 0.01) {
+      vec3 skyRefl = mix(vec3(0.96, 0.68, 0.46), vec3(0.24, 0.28, 0.46), ss(0.04, 0.88, diag));
+      col = mix(col, skyRefl, (0.18 + 0.36 * (1.0 - diag) * (0.45 + 0.55 * deepK)) * sunset);
+      float swell = 0.65 + 0.35 * N(p * vec2(0.7, 1.4) + drift * 3.0, 320.0).r;
+      col += vec3(0.98, 0.72, 0.40) * sunPath * swell * 0.22 * ss(8.0, 90.0, s) * sunset;
+    }
+    if (night > 0.01) {
+      float swell = 0.65 + 0.35 * N(p * vec2(0.7, 1.4) + drift * 3.0, 320.0).r;
+      col += vec3(0.48, 0.70, 0.92) * moonPath * swell * 0.19 * ss(8.0, 90.0, s) * night;
+    }
+
+    // Two rotated jittered glitter lattices clustered organically along wave swells & sun/moon path!
+    float pathBoost = mix(1.0, 0.36 + 0.92 * max(sunPath, moonPath), max(sunset, night));
+    float glitterMask = ss(0.32, 0.74, N(p + drift * 3.0, 520.0).g) * deepK * pathBoost;
     if (glitterMask > 0.01) {
       vec2 pg1 = rot(0.37) * p / 19.0;
       vec2 c1 = floor(pg1), f1 = fract(pg1);
@@ -214,7 +301,8 @@ void main() {
       float ph2 = sin(t * (1.4 + hash2(c2 + 7.9) * 2.1) + hash2(c2 + 11.4) * 6.283);
       float dot2 = (1.0 - ss(0.04, 0.13, length(f2 - o2))) * ss(0.60, 0.96, ph2);
 
-      col = mix(col, FOAM, clamp((dot1 + dot2 * 0.8) * glitterMask * 0.85, 0.0, 0.9));
+      vec3 glintCol = moodMix(FOAM, vec3(1.00, 0.89, 0.64), vec3(0.86, 0.95, 1.00), sunset, night);
+      col = mix(col, glintCol, clamp((dot1 + dot2 * 0.8) * glitterMask * 0.88, 0.0, 0.92));
     }
 
     // Shallow turquoise caustics broken with Worley cells & stipple grain
@@ -222,7 +310,8 @@ void main() {
     if (shoalFade > 0.01) {
       vec2 wc = worley((p + vec2(t * 4.5, -t * 2.6)) / 24.0);
       float net = (1.0 - ss(0.04, 0.18, wc.y - wc.x)) * shoalFade;
-      col = mix(col, SEA0 * 1.04, step(g2, net * 0.65) * 0.42 + net * 0.18);
+      vec3 caustCol = moodMix(SEA0 * 1.04, vec3(0.86, 0.84, 0.66), vec3(0.32, 0.58, 0.68), sunset, night);
+      col = mix(col, caustCol, (step(g2, net * 0.65) * 0.42 + net * 0.18) * mix(1.0, 0.72, night));
     }
 
     // Crisp stippled offshore incoming wave crests
@@ -233,7 +322,7 @@ void main() {
       float brk = ss(0.32, 0.76, N(p + vec2(t * 3.0, 0.0), 210.0).g);
       float crest = (1.0 - ss(0.8, 2.2, wDist)) * wEnv * brk * 0.78;
       float spray = exp(-max(wDist - 1.5, 0.0) / 6.5) * wEnv * brk * 0.42;
-      col = mix(col, FOAM, max(crest, step(g2, spray)));
+      col = mix(col, foamCol, max(crest, step(g2, spray)));
     }
 
     // Expanding circular kayak paddle ripples on ocean surface
@@ -245,14 +334,18 @@ void main() {
       float rad = 4.0 + age * 14.0 * rp.w;
       float dr = abs(length(p - rp.xy) - rad);
       float ring = (1.0 - ss(0.4, 1.7, dr)) * (1.0 - age / 2.2) * 0.52;
-      col = mix(col, FOAM, ring);
+      col = mix(col, foamCol, ring);
     }
   } else {
-    // ---------- WARM SAND WITH DUSTY-MAUVE SHADOW GRADATION + STIPPLE ----------
+    // ---------- WARM SAND WITH DUSTY-MAUVE SHADOW GRADATION + WET-SAND SKY MIRROR ----------
     float wet = ss(-26.0, 2.0, s);
     float sandV = clamp(wet * 0.72 + (g1 - 0.5) * 0.09, 0.0, 1.0);
-    col = sandRamp(sandV);
-    col = mix(col, WETSAND, clamp(wet * 0.65, 0.0, 0.7));
+    col = sandRamp(sandV, sunset, night);
+    col = mix(col, wetCol, clamp(wet * 0.65, 0.0, 0.72));
+    // Subtle grazing sunlight along sunward dry sand domes at Sunset
+    if (sunset > 0.01) {
+      col = mix(col, col * vec3(1.12, 0.98, 0.84), (1.0 - diag) * (1.0 - wet) * 0.34 * sunset);
+    }
     col *= 1.0 - 0.035 * ss(0.4, 0.8, N(p, 900.0).r) * (1.0 - wet);
   }
 
@@ -260,8 +353,8 @@ void main() {
   float reachBase = min(30.0 * shoreE * (0.85 + 0.30 * N(p, 900.0).g), uSigma * 0.76);
   float wk = (1.0 - ss(2.0, 38.0, s)) * mix(1.0, energy, ss(2.0, 10.0, s));
   if ((s < 4.0 && reachBase > 0.5) || (s >= 4.0 && wk > 0.01)) {
-    const vec3 FILM = WETSAND;
-    const vec3 MARK = WETSAND * 0.965;
+    vec3 FILM = wetCol;
+    vec3 MARK = wetCol * 0.955;
     float onSand = step(s, 4.0);
     vec2 wl = worley((p - nrm * fu * 8.0) / 7.5);
     float laceNet = (1.0 - ss(0.03, 0.11, wl.y - wl.x)) * ss(0.40, 0.64, N(p + vec2(t * 2.0, 0.0), 120.0).g);
@@ -289,27 +382,40 @@ void main() {
       float front = layers[j].x, a = layers[j].y, feather = layers[j].w;
       float cov = ss(front - 1.0, front + feather, sW);
       float lace = laceNet * cov * ss(0.40, 0.60, a) * (1.0 - ss(0.70, 1.40, a)) * wk;
-      col = mix(col, FOAM, lace * 0.74);
+      col = mix(col, foamCol, lace * 0.74);
 
       float edgeK = a < 0.45 ? 1.0 : 1.0 - ss(0.45, 1.05, a);
       float d = sW - front;
       float lineE = (1.0 - ss(0.8, 1.9, abs(d - 0.9))) * edgeK * onSand;
       float sprayE = exp(-max(d, 0.0) / 5.2) * cov * edgeK * 0.50 * onSand;
-      col = mix(col, FOAM, max(lineE * 0.95, step(g1, sprayE)));
+      col = mix(col, foamCol, max(lineE * 0.95, step(g1, sprayE)));
     }
   }
 
-  // ---------- CRISP ANTI-ALIASED SDF KAYAKS ----------
+  // ---------- CRISP ANTI-ALIASED SDF KAYAKS + ELONGATED SHADOWS + COZY NIGHT BOW LANTERN ----------
+  vec3 entityGrade = moodMix(vec3(1.0), vec3(0.96, 0.80, 0.68), vec3(0.48, 0.60, 0.78), sunset, night);
+  vec3 shColorTint = moodMix(vec3(0.62, 0.72, 0.76), vec3(0.46, 0.44, 0.62), vec3(0.36, 0.44, 0.62), sunset, night);
+  float lanternAmt = max(night, sunset * 0.52);
+
   for (int i = 0; i < 4; i++) {
     if (float(i) >= uKayN) break;
     vec4 k = uKay[i];
     vec2 q = rot(-k.z) * (p - k.xy);
-    if (dot(q, q) > 1024.0) continue;
+    if (dot(q, q) > 1444.0) continue;
 
-    // Subtle sunken shadow on seabed
-    vec2 qs = rot(-k.z) * (p - (k.xy + vec2(4.0, 5.5)));
+    // Warm bow lantern reflection pooling onto dark water around kayak bow at Dusk & Night!
+    if (lanternAmt > 0.02) {
+      float dLan = length(q - vec2(12.5, 0.0));
+      float lanPool = exp(-dLan * dLan / 190.0) * 0.34 + exp(-dLan * dLan / 28.0) * 0.48;
+      float flick = 0.94 + 0.06 * sin(t * 4.5 + float(i) * 2.1);
+      col += vec3(1.00, 0.72, 0.30) * lanPool * lanternAmt * flick;
+    }
+
+    // Directional sunken seabed shadow (stretches further southeast during Golden Sunset!)
+    vec2 kShOff = vec2(4.0, 5.5) * mix(1.0, 1.95, sunset) * mix(1.0, 1.25, night);
+    vec2 qs = rot(-k.z) * (p - (k.xy + kShOff));
     float shMask = ss(1.6, -1.2, hullSD(qs));
-    col = mix(col, col * vec3(0.62, 0.72, 0.76), shMask * 0.48);
+    col = mix(col, col * shColorTint, shMask * 0.48);
 
     float sd = hullSD(q);
     vec2 pd = paddleSD(q, k.w);
@@ -322,39 +428,44 @@ void main() {
       vec3 baseC = mod(float(i), 2.0) < 0.5 ? vec3(0.86, 0.62, 0.12) : vec3(0.72, 0.30, 0.22);
       vec3 hull = mix(baseA, baseB, 1.0 - ss(0.2, 0.7, abs(q.y) / max(wd, 0.5)));
       hull = mix(hull, baseC, ss(0.78, 1.0, abs(q.y) / max(wd, 0.5)));
-      // Hatch dots
-      hull = mix(hull, vec3(0.97, 0.96, 0.91), 1.0 - ss(0.9, 1.5, length(q - vec2(12.5, 0.0))));
+      // Hatch dots (bow dot warms into cozy glowing lantern at dusk & night!)
+      float bowDot = 1.0 - ss(0.9, 1.6, length(q - vec2(12.5, 0.0)));
       hull = mix(hull, vec3(0.97, 0.96, 0.91), 1.0 - ss(0.9, 1.5, length(q - vec2(-11.5, 0.0))));
       // Cockpit
       hull = mix(hull, vec3(0.28, 0.23, 0.19), 1.0 - ss(0.0, 0.6, length((q - vec2(-1.0, 0.0)) / vec2(5.6, 2.7)) - 1.0));
+      hull *= entityGrade;
+      vec3 bowCol = mix(vec3(0.97, 0.96, 0.91) * entityGrade, vec3(1.18, 0.88, 0.42), lanternAmt);
+      hull = mix(hull, bowCol, bowDot);
       col = mix(col, hull, mHull);
     }
 
     // Paddler (coral-orange vest + woven straw hat)
     float vest = ss(0.6, -0.6, length((q - vec2(-0.8, 0.0)) / vec2(2.6, 3.6)) - 1.0);
-    col = mix(col, vec3(0.94, 0.46, 0.24), vest);
+    col = mix(col, vec3(0.94, 0.46, 0.24) * entityGrade, vest);
     float hat = ss(0.55, -0.55, length(q - vec2(-0.5, 0.0)) - 2.35);
-    col = mix(col, vec3(0.94, 0.87, 0.70), hat);
+    col = mix(col, vec3(0.94, 0.87, 0.70) * entityGrade, hat);
     float crown = ss(0.45, -0.45, length(q - vec2(-0.5, 0.0)) - 1.25);
-    col = mix(col, vec3(0.74, 0.44, 0.30), crown * 0.55);
+    col = mix(col, vec3(0.74, 0.44, 0.30) * entityGrade, crown * 0.55);
 
     // Twin-blade paddle over cockpit
-    col = mix(col, vec3(0.26, 0.22, 0.19), ss(0.55, -0.55, pd.x));
-    col = mix(col, vec3(0.86, 0.30, 0.24), ss(0.55, -0.55, pd.y));
+    col = mix(col, vec3(0.26, 0.22, 0.19) * entityGrade, ss(0.55, -0.55, pd.x));
+    col = mix(col, vec3(0.86, 0.30, 0.24) * entityGrade, ss(0.55, -0.55, pd.y));
   }
 
-  // ---------- CRISP SCULPTED SEABIRDS + DISTANT SHADOWS ----------
+  // ---------- CRISP SCULPTED SEABIRDS + ELONGATED DIRECTIONAL SHADOWS ----------
+  vec2 bShOff = vec2(22.0, 28.0) * mix(1.0, 1.65, sunset) * mix(1.0, 1.20, night);
+  vec3 birdGrade = moodMix(vec3(1.0), vec3(1.00, 0.84, 0.70), vec3(0.56, 0.70, 0.88), sunset, night);
   for (int i = 0; i < 8; i++) {
     if (float(i) >= uBirdN) break;
     vec4 b = uBird[i];
     // Distant soft shadow on ocean/sand
-    vec2 qs = rot(-b.z) * (p - (b.xy + vec2(22.0, 28.0)));
+    vec2 qs = rot(-b.z) * (p - (b.xy + bShOff));
     if (dot(qs, qs) < 420.0) {
       vec3 bs = gullSD(qs, b.w);
       float bm = ss(1.4, -0.6, min(bs.x, bs.y));
-      col = mix(col, col * vec3(0.70, 0.76, 0.80), bm * 0.36);
+      col = mix(col, col * shColorTint, bm * 0.36);
     }
-    // Crisp white seabird with slate wingtips
+    // Crisp seabird with slate wingtips harmonized to time of day
     vec2 q = rot(-b.z) * (p - b.xy);
     if (dot(q, q) < 400.0) {
       vec3 g = gullSD(q, b.w);
@@ -363,12 +474,18 @@ void main() {
       if (m > 0.0) {
         vec3 birdCol = mix(vec3(0.98, 0.98, 0.96), vec3(0.84, 0.87, 0.90), ss(0.2, 0.85, g.z) * 0.45);
         birdCol = mix(birdCol, vec3(0.24, 0.27, 0.30), ss(0.76, 0.94, g.z) * step(g.y, g.x + 0.5));
-        col = mix(col, birdCol, m);
+        col = mix(col, birdCol * birdGrade, m);
       }
     }
   }
 
-  fragColor = vec4(col, 1.0);
+  // Photographic filmic highlight rolloff (smooth creamy-gold sun glints & foam without digital clipping!)
+  vec3 cSafe = max(col, vec3(0.0));
+  float fLum = dot(cSafe, vec3(0.2126, 0.7152, 0.0722));
+  vec3 mapped = cSafe / (1.0 + max(0.0, fLum - 0.74) * 0.56);
+  mapped = mix(mapped, vec3(1.00, 0.97, 0.92), ss(0.78, 1.62, fLum) * 0.34);
+
+  fragColor = vec4(clamp(mapped, 0.0, 1.0), 1.0);
 }`;
 
 export const PALM_VS = `#version 300 es
@@ -398,6 +515,8 @@ precision highp float;
 uniform sampler2D uAtlas;
 uniform vec2 uResPx;
 uniform float uDpr;
+uniform float uSunset;
+uniform float uNight;
 uniform float uBirdN;
 uniform vec4 uBird[8];
 in vec2 vUV;
@@ -419,5 +538,27 @@ void main() {
       if (min(g.x, g.y) < 0.6) discard;
     }
   }
-  fragColor = tree;
+
+  float sunset = clamp(uSunset, 0.0, 1.0);
+  float night  = clamp(uNight,  0.0, 1.0);
+  vec3 c = tree.rgb;
+
+  // Separate translucent baked ground shadow (low alpha) from opaque fronds & trunk
+  float isFrond = smoothstep(0.24, 0.52, tree.a);
+  if (sunset > 0.01) {
+    // Ground shadow cools to dusky violet-slate; fronds shift to rich golden-olive with warm top-crown sun rim!
+    float sunRim = clamp(1.0 - vUV.y * 1.15, 0.0, 1.0);
+    vec3 frondSun = c * mix(vec3(0.62, 0.54, 0.58), vec3(0.96, 0.72, 0.48), sunRim * 0.75)
+                  + vec3(0.08, 0.04, 0.01) * sunRim * sunRim;
+    vec3 shSun = vec3(0.22, 0.19, 0.34);
+    c = mix(c, mix(shSun, frondSun, isFrond), sunset);
+  }
+  if (night > 0.01) {
+    float moonRim = clamp(1.0 - vUV.y * 1.2, 0.0, 1.0);
+    vec3 frondNgt = c * vec3(0.36, 0.50, 0.68) + vec3(0.04, 0.08, 0.14) * moonRim;
+    vec3 shNgt = vec3(0.08, 0.12, 0.24);
+    c = mix(c, mix(shNgt, frondNgt, isFrond), night);
+  }
+
+  fragColor = vec4(c, tree.a * mix(1.0, 1.12, max(sunset, night) * (1.0 - isFrond)));
 }`;

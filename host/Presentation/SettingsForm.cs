@@ -35,8 +35,8 @@ namespace Scream.Presentation
             Text = "Scream — Hình nền thích ứng";
             Icon = appIcon;
             StartPosition = FormStartPosition.CenterScreen;
-            ClientSize = new Size(1160, 736);
-            MinimumSize = new Size(880, 600);
+            ClientSize = new Size(1220, 760);
+            MinimumSize = new Size(920, 620);
             BackColor = Color.FromArgb(245, 245, 247);
 
             _webView = new WebView2
@@ -47,11 +47,28 @@ namespace Scream.Presentation
             Controls.Add(_webView);
         }
 
+        private bool _darkMode;
+
         protected override void OnHandleCreated(EventArgs e)
         {
             base.OnHandleCreated(e);
-            int dark = 0;
-            Native.DwmSetWindowAttribute(Handle, Native.DWMWA_USE_IMMERSIVE_DARK_MODE, ref dark, sizeof(int));
+            ApplyDwmTitlebar(_darkMode);
+        }
+
+        public void SetDarkMode(bool dark)
+        {
+            if (_darkMode == dark && IsHandleCreated) return;
+            _darkMode = dark;
+            var bg = dark ? Color.FromArgb(22, 22, 26) : Color.FromArgb(245, 245, 247);
+            BackColor = bg;
+            if (!_webView.IsDisposed) _webView.DefaultBackgroundColor = bg;
+            if (IsHandleCreated) ApplyDwmTitlebar(dark);
+        }
+
+        private void ApplyDwmTitlebar(bool dark)
+        {
+            int flag = dark ? 1 : 0;
+            Native.DwmSetWindowAttribute(Handle, Native.DWMWA_USE_IMMERSIVE_DARK_MODE, ref flag, sizeof(int));
         }
 
         protected override async void OnShown(EventArgs e)

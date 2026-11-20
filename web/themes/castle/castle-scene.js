@@ -28,6 +28,7 @@ const DEFAULTS = {
   timeMode: 0, // 0 = Day, 1 = Golden Sunset, 2 = Starlit Night, 3 = Auto by local clock
   mist: 0.72,
   flow: 1.0,
+  showMeteors: 1,
   castleSpeed: 1.0,
   showCastle: 1,
   sheep: 22
@@ -68,6 +69,7 @@ const U = {
   uFieldTex: gl.getUniformLocation(prog, 'uFieldTex'),
   uAlpsTex: gl.getUniformLocation(prog, 'uAlpsTex'),
   uAlpsReady: gl.getUniformLocation(prog, 'uAlpsReady'),
+  uShowMeteors: gl.getUniformLocation(prog, 'uShowMeteors'),
   uRes: gl.getUniformLocation(prog, 'uRes'),
   uGrid: gl.getUniformLocation(prog, 'uGrid'),
   uStep: gl.getUniformLocation(prog, 'uStep'),
@@ -82,6 +84,8 @@ const U = {
   uGust: gl.getUniformLocation(prog, 'uGust'),
   uMoonOcc: gl.getUniformLocation(prog, 'uMoonOcc'),
   uMoonVis: gl.getUniformLocation(prog, 'uMoonVis'),
+  uSunOcc: gl.getUniformLocation(prog, 'uSunOcc'),
+  uSunVis: gl.getUniformLocation(prog, 'uSunVis'),
   uSeed: gl.getUniformLocation(prog, 'uSeed'),
   uCastleRect: gl.getUniformLocation(prog, 'uCastleRect'),
   uWindFronts: gl.getUniformLocation(prog, 'uWindFronts'),
@@ -185,6 +189,17 @@ function computeMoonOcclusion() {
   const cR = sampleSkyCloudAlphaCpu(mx + mRad * 0.65, my);
   const occ = Math.max(0, Math.min(1, c0 * 0.50 + cL * 0.25 + cR * 0.25));
   return { occ, vis: 1 - occ * 0.78 };
+}
+
+function computeSunOcclusion() {
+  if (sunsetMix <= 0.02) return { occ: 0, vis: 1 };
+  const sx = W * 0.43, sy = H * 0.42;
+  const sRad = Math.max(18, Math.min(32, Math.min(W, H) * 0.032));
+  const c0 = sampleSkyCloudAlphaCpu(sx, sy);
+  const cL = sampleSkyCloudAlphaCpu(sx - sRad * 0.70, sy - sRad * 0.25);
+  const cR = sampleSkyCloudAlphaCpu(sx + sRad * 0.70, sy - sRad * 0.25);
+  const occ = Math.max(0, Math.min(1, c0 * 0.50 + cL * 0.25 + cR * 0.25));
+  return { occ, vis: 1 - occ * 0.62 };
 }
 
 function allocResources() {
@@ -293,12 +308,16 @@ function renderFrame(t) {
   gl.uniform1f(U.uAdaptive, P.adaptive);
   gl.uniform1f(U.uMist, P.mist);
   const moon = computeMoonOcclusion();
+  const sun = computeSunOcclusion();
   gl.uniform1f(U.uSunset, sunsetMix);
   gl.uniform1f(U.uNight, nightMix);
   gl.uniform1f(U.uGust, breeze.gust);
   gl.uniform1f(U.uMoonOcc, moon.occ);
   gl.uniform1f(U.uMoonVis, moon.vis);
+  gl.uniform1f(U.uSunOcc, sun.occ);
+  gl.uniform1f(U.uSunVis, sun.vis);
   gl.uniform1f(U.uAlpsReady, alpsReady);
+  gl.uniform1f(U.uShowMeteors, P.showMeteors);
   gl.uniform1f(U.uSeed, SCENE_SEED);
 
   if (castleRect) {

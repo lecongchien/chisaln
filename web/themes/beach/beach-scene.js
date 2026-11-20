@@ -17,6 +17,7 @@ import { BEACH_FS, PALM_VS, PALM_FS } from './beach-shader.js';
 import { createPalmAtlasLoader, computePalmSpots } from './palm-atlas.js';
 
 const DEFAULTS = {
+  timeMode: 0, // 0 = Day, 1 = Golden Coastal Sunset, 2 = Moonlit Night, 3 = Auto by local clock
   sigma: 84,
   warp: 34,
   shoal: 96,
@@ -67,6 +68,8 @@ const U = {
   uShoal: gl.getUniformLocation(terrainProg, 'uShoal'),
   uShallow: gl.getUniformLocation(terrainProg, 'uShallow'),
   uSigma: gl.getUniformLocation(terrainProg, 'uSigma'),
+  uSunset: gl.getUniformLocation(terrainProg, 'uSunset'),
+  uNight: gl.getUniformLocation(terrainProg, 'uNight'),
   uSeed: gl.getUniformLocation(terrainProg, 'uSeed'),
   uKayN: gl.getUniformLocation(terrainProg, 'uKayN'),
   uKay: gl.getUniformLocation(terrainProg, 'uKay'),
@@ -84,6 +87,8 @@ const UP = {
   uTime: gl.getUniformLocation(palmProg, 'uTime'),
   uPhase: gl.getUniformLocation(palmProg, 'uPhase'),
   uSpeed: gl.getUniformLocation(palmProg, 'uSpeed'),
+  uSunset: gl.getUniformLocation(palmProg, 'uSunset'),
+  uNight: gl.getUniformLocation(palmProg, 'uNight'),
   uAtlas: gl.getUniformLocation(palmProg, 'uAtlas'),
   uBirdN: gl.getUniformLocation(palmProg, 'uBirdN'),
   uBird: gl.getUniformLocation(palmProg, 'uBird')
@@ -110,6 +115,30 @@ const birdUniforms = new Float32Array(8 * 4);
 let nextRipIdx = 0;
 
 let simTime = 0, lastRaf = 0, lastDraw = 0;
+let sunsetMix = 0, nightMix = 0, moodInitialized = false;
+
+function sstep(a, b, x) {
+  const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+}
+
+function targetMoodFromClock() {
+  const mode = Math.round(P.timeMode || 0);
+  if (mode === 0) return { sunset: 0.0, night: 0.0 };
+  if (mode === 1) return { sunset: 1.0, night: 0.0 };
+  if (mode === 2) return { sunset: 0.0, night: 1.0 };
+  const now = new Date();
+  const hr = now.getHours() + now.getMinutes() / 60;
+  if (hr >= 19.25 || hr < 5.25) return { sunset: 0.0, night: 1.0 };
+  if (hr >= 6.5 && hr < 16.75) return { sunset: 0.0, night: 0.0 };
+  if (hr >= 16.75 && hr < 18.0) return { sunset: sstep(16.75, 18.0, hr), night: 0.0 };
+  if (hr >= 18.0 && hr < 19.25) {
+    const k = sstep(18.0, 19.25, hr);
+    return { sunset: 1.0 - k, night: k };
+  }
+  const k = sstep(5.25, 6.5, hr);
+  return { sunset: Math.sin(k * Math.PI) * 0.65, night: 1.0 - k };
+}
 
 const palmAtlas = createPalmAtlasLoader(gl, () => {
   if (paused) renderFrame(simTime);
@@ -339,6 +368,8 @@ function renderFrame(t) {
   gl.uniform1f(U.uShoal, P.shoal);
   gl.uniform1f(U.uShallow, P.shallow);
   gl.uniform1f(U.uSigma, P.sigma);
+  gl.uniform1f(U.uSunset, sunsetMix);
+  gl.uniform1f(U.uNight, nightMix);
   gl.uniform1f(U.uSeed, SCENE_SEED);
 
   gl.uniform1f(U.uKayN, kayaks.length);
@@ -364,6 +395,8 @@ function renderFrame(t) {
     gl.uniform1f(UP.uDpr, dpr);
     gl.uniform1f(UP.uTime, t);
     gl.uniform1f(UP.uSpeed, P.speed);
+    gl.uniform1f(UP.uSunset, sunsetMix);
+    gl.uniform1f(UP.uNight, nightMix);
     gl.uniform1f(UP.uBirdN, birds.length);
     gl.uniform4fv(UP.uBird, birdUniforms);
 
@@ -399,6 +432,19 @@ function tick(now) {
     curMix = 1 - Math.pow(1 - rawT, 3);
   }
 
+  const tgt = targetMoodFromClock();
+  if (!moodInitialized) {
+    sunsetMix = tgt.sunset;
+    nightMix = tgt.night;
+    moodInitialized = true;
+  } else {
+    const k = Math.min(1, dt * 1.45);
+    sunsetMix += (tgt.sunset - sunsetMix) * k;
+    nightMix  += (tgt.night  - nightMix)  * k;
+    if (Math.abs(tgt.sunset - sunsetMix) < 0.002) sunsetMix = tgt.sunset;
+    if (Math.abs(tgt.night  - nightMix)  < 0.002) nightMix  = tgt.night;
+  }
+
   stepKayaks(dt);
   stepBirds(dt);
   renderFrame(simTime);
@@ -416,6 +462,12 @@ const bridge = createHostBridge({
       P[k] = num;
       if (k === 'sigma' || k === 'warp') fieldDirty = true;
       if (k === 'palms' || k === 'kayaks' || k === 'birds') entitiesDirty = true;
+      if (k === 'timeMode' && (!moodInitialized || paused)) {
+        const tgt = targetMoodFromClock();
+        sunsetMix = tgt.sunset;
+        nightMix = tgt.night;
+        moodInitialized = true;
+      }
     }
     if (fieldDirty) commitField(false);
     if (entitiesDirty) {

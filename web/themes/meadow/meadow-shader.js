@@ -52,10 +52,10 @@ uniform vec4 uActorRect;    // xy = top-left CSS px, zw = size CSS px (z=0 disab
 
 out vec4 fragColor;
 
-// Daytime Studio Ghibli hand-painted watercolor palette
-const vec3 G_LIGHT      = vec3(0.755, 0.832, 0.505);
-const vec3 G_MID        = vec3(0.610, 0.742, 0.408);
-const vec3 G_DEEP       = vec3(0.492, 0.656, 0.345);
+// Daytime Studio Ghibli hand-painted watercolor palette (rich emerald depth matching Kazuo Oga brushwork)
+const vec3 G_LIGHT      = vec3(0.745, 0.822, 0.495);
+const vec3 G_MID        = vec3(0.585, 0.725, 0.392);
+const vec3 G_DEEP       = vec3(0.455, 0.625, 0.315);
 const vec3 G_GUST_HI    = vec3(0.835, 0.898, 0.558);
 const vec3 INK          = vec3(0.240, 0.392, 0.172);
 const vec3 SHADOW       = vec3(0.585, 0.692, 0.542);
@@ -63,18 +63,18 @@ const vec3 CLOUD_HI     = vec3(0.996, 0.994, 0.976);
 const vec3 CLOUD_BODY   = vec3(0.902, 0.934, 0.962);
 const vec3 CLOUD_SH     = vec3(0.735, 0.802, 0.882);
 
-// Golden-Hour Sunset Studio Ghibli watercolor palette ("Hoàng hôn / Ánh chiều tà":
-// living deep golden-emerald meadow + grazing honey-gold wind crests + cool twilight violet shadows + clean coral-gold clouds)
-const vec3 S_G_LIGHT    = vec3(0.415, 0.515, 0.215);
-const vec3 S_G_MID      = vec3(0.248, 0.398, 0.195);
-const vec3 S_G_DEEP     = vec3(0.115, 0.235, 0.165);
-const vec3 S_G_GUST_HI  = vec3(0.765, 0.675, 0.255);
-const vec3 S_INK        = vec3(0.085, 0.165, 0.125);
-const vec3 S_SHADOW     = vec3(0.440, 0.465, 0.615);
-const vec3 S_CLOUD_HI   = vec3(1.000, 0.815, 0.535);
-const vec3 S_CLOUD_BODY = vec3(0.865, 0.515, 0.495);
-const vec3 S_CLOUD_SH   = vec3(0.245, 0.235, 0.415);
-const vec3 SUNSET_TINT  = vec3(1.000, 0.680, 0.340);
+// Refined Photographic Golden-Hour Sunset Studio Ghibli palette ("Hoàng hôn / Ánh chiều tà":
+// deep velvety twilight-olive meadow + warm burnished amber wind crests + cool slate-mauve shadows + natural apricot-cream clouds)
+const vec3 S_G_LIGHT    = vec3(0.365, 0.435, 0.195);
+const vec3 S_G_MID      = vec3(0.210, 0.328, 0.172);
+const vec3 S_G_DEEP     = vec3(0.095, 0.188, 0.162);
+const vec3 S_G_GUST_HI  = vec3(0.695, 0.565, 0.245);
+const vec3 S_INK        = vec3(0.075, 0.145, 0.125);
+const vec3 S_SHADOW     = vec3(0.455, 0.470, 0.595);
+const vec3 S_CLOUD_HI   = vec3(0.995, 0.855, 0.655);
+const vec3 S_CLOUD_BODY = vec3(0.845, 0.605, 0.545);
+const vec3 S_CLOUD_SH   = vec3(0.345, 0.365, 0.495);
+const vec3 SUNSET_TINT  = vec3(0.985, 0.695, 0.395);
 
 // Moonlit Night Studio Ghibli watercolor palette (deep cool jade-indigo meadow + misty silver-blue clouds)
 const vec3 N_G_LIGHT    = vec3(0.168, 0.298, 0.332);
@@ -929,11 +929,14 @@ void main() {
   float windWave   = windW.x;
   float windTrough = windW.y;
 
-  // Natural rolling meadow hills & clover valleys (gentle 3D hillock slope shading along LIGHT!)
+  // Dynamic solar direction: rotates slightly lower/more lateral during Golden-Hour Sunset to align clouds, hills & shadows!
+  vec2 lightDir = normalize(mix(LIGHT, vec2(-0.76, -0.65), sunset));
+
+  // Natural rolling meadow hills & clover valleys (gentle 3D hillock slope shading along lightDir!)
   float w1 = N(p, 1650.0).r;
   float w2 = N(p + 311.0, 560.0).g;
   float hillH = w1 * 0.65 + w2 * 0.35;
-  float hillLitH = N(p + LIGHT * 65.0, 1650.0).r * 0.65 + N(p + LIGHT * 65.0 + 311.0, 560.0).g * 0.35;
+  float hillLitH = N(p + lightDir * 65.0, 1650.0).r * 0.65 + N(p + lightDir * 65.0 + 311.0, 560.0).g * 0.35;
   float hillSlope = clamp(0.5 + (hillH - hillLitH) * 2.8, 0.0, 1.0);
 
   vec3 col = mix(gMid, gLight, ss(0.24, 0.78, hillH * 0.65 + hillSlope * 0.35));
@@ -970,7 +973,10 @@ void main() {
     float beamAlong = 1.0 - ss(maxDiag * 0.42, maxDiag * 1.35, sAlong);
     float sunCorner = exp(-dot(relS, relS) / (maxDiag * maxDiag * 0.34));
     float rayAngle = atan(relS.y, relS.x);
-    float sunRays = 0.88 + 0.12 * sin(rayAngle * 7.0 + N(p * 0.25 + vec2(wt * 2.0, 0.0), 420.0).r * 3.5);
+    float rayWarp  = N(p * 0.24 + vec2(wt * 1.8, 0.0), 440.0).r * 2.8;
+    // Organic irregular multi-frequency crepuscular sunbeams streaming through cloud gaps (never uniform spokes!)
+    float rayBand  = 0.56 + 0.24 * sin(rayAngle * 4.6 + rayWarp) + 0.20 * sin(rayAngle * 9.8 - wt * 0.16 + 1.3);
+    float sunRays  = mix(0.76, 1.14, clamp(rayBand, 0.0, 1.0) * (1.0 - cloudShMask * 0.48));
     float dapple = 0.85 + 0.15 * ss(0.24, 0.78, N(p + vec2(uTime * 3.0, uTime * 1.8), 860.0).r);
     sunsetPool = clamp((beamCross * beamAlong * 0.86 + sunCorner * 0.58) * sunRays * dapple, 0.0, 1.0);
 
@@ -1069,12 +1075,23 @@ void main() {
   if (uActorRect.z > 1.0) {
     vec2 aUV = (p - uActorRect.xy) / uActorRect.zw;
     if (aUV.x >= 0.0 && aUV.x <= 1.0 && aUV.y >= 0.0 && aUV.y <= 1.0) {
-      float shA = texture(uActorShadow, aUV).a;
+      float shBase = texture(uActorShadow, aUV).a;
+      float shA = shBase;
+      // Low setting sun stretches the boy's & kite's shadow naturally southeast across the grass!
+      if (sunset > 0.02) {
+        vec2 aShLongUV = aUV - vec2(0.030, 0.026) * sunset;
+        if (aShLongUV.x >= 0.0 && aShLongUV.x <= 1.0 && aShLongUV.y >= 0.0 && aShLongUV.y <= 1.0) {
+          shA = max(shBase, texture(uActorShadow, aShLongUV).a * 0.82 * sunset);
+        }
+      }
       col = mix(col, col * gShadow, shA * mix(0.76, 0.80, max(night, sunset * 0.7)));
       vec4 act = texture(uActor, aUV);
       float sunLitA = sunsetPool * (1.0 - cloudShMask * 0.74);
-      vec3 actSun  = act.rgb * mix(vec3(0.72, 0.68, 0.80), vec3(1.12, 0.94, 0.76), sunLitA)
-                   + vec3(0.07, 0.035, 0.01) * sunLitA;
+      // Warm golden-hour rim light catching sun-facing upper-left contour of kite boy & kite
+      float rimA = sunset > 0.02 ? clamp(act.a - texture(uActor, clamp(aUV + lightDir * 0.0085, 0.0, 1.0)).a, 0.0, 1.0) : 0.0;
+      vec3 actSun  = act.rgb * mix(vec3(0.70, 0.66, 0.80), vec3(1.14, 0.93, 0.74), sunLitA)
+                   + vec3(0.07, 0.035, 0.008) * sunLitA
+                   + vec3(0.42, 0.24, 0.06) * rimA * sunLitA;
       vec3 actMoon = act.rgb * mix(vec3(0.46, 0.57, 0.74), vec3(0.78, 0.88, 0.98), moonPool * (1.0 - cloudShMask * 0.72));
       actMoon += MOON_TINT * moonPool * (1.0 - cloudShMask * 0.72) * 0.07;
       col = mix(col, moodMix(act.rgb, actSun, actMoon, sunset, night), act.a);
@@ -1093,7 +1110,11 @@ void main() {
       vec4 catC = sampleCat(catUV);
       float amberEye = ss(0.10, 0.30, catC.r - catC.b) * ss(0.24, 0.52, catC.r);
       float sunLitC = sunsetPool * (1.0 - cloudShMask * 0.72);
-      vec3 furSun  = catC.rgb * mix(vec3(0.74, 0.70, 0.82), vec3(1.12, 0.93, 0.76), sunLitC) + vec3(0.04, 0.022, 0.01) * sunLitC;
+      // Warm sunset golden halo rim along sun-facing upper-left edge of black kitten's fur!
+      float rimC = sunset > 0.02 ? clamp(catC.a - sampleCat(clamp(catUV + lightDir * 0.024, 0.0, 1.0)).a, 0.0, 1.0) : 0.0;
+      vec3 furSun  = catC.rgb * mix(vec3(0.72, 0.68, 0.82), vec3(1.12, 0.92, 0.74), sunLitC)
+                   + vec3(0.04, 0.022, 0.008) * sunLitC
+                   + vec3(0.46, 0.26, 0.07) * rimC * sunLitC;
       vec3 eyeSun  = catC.rgb * vec3(1.14, 0.98, 0.68);
       vec3 catSun  = mix(furSun, eyeSun, amberEye);
       vec3 furMoon = catC.rgb * mix(vec3(0.54, 0.66, 0.86), vec3(0.78, 0.90, 1.04), moonPool) + vec3(0.015, 0.028, 0.050);
@@ -1143,9 +1164,9 @@ void main() {
     float cloudAlpha = clamp(wispA * 0.42 + coreA * 0.56, 0.0, 0.965);
 
     if (cloudAlpha > 0.004) {
-      // Exact finite-difference directional derivative + mid-range optical depth toward LIGHT
-      vec2 cNear = evalCloudAt(p + LIGHT * 11.0, wt);
-      float dMid = evalCloudLightSample(p + LIGHT * 28.0, wt);
+      // Exact finite-difference directional derivative + mid-range optical depth toward dynamic solar lightDir
+      vec2 cNear = evalCloudAt(p + lightDir * 11.0, wt);
+      float dMid = evalCloudLightSample(p + lightDir * 28.0, wt);
 
       float optDepth = max(0.0, cNear.x) * 0.52 + max(0.0, dMid) * 1.12;
       float trans    = exp(-optDepth * 1.52);
@@ -1173,15 +1194,15 @@ void main() {
         cc += vec3(0.035, 0.032, 0.020) * silverRim * dayAmt;
       }
 
-      // Sunset ("Ánh chiều tà"): clean radiant coral-gold alpenglow + cool periwinkle twilight depth
+      // Sunset ("Ánh chiều tà"): directional molten-gold near-sun glow -> deep rose-violet far-dusk atmospheric gradient!
       if (sunset > 0.02) {
-        float sunBoost = 0.70 + 0.50 * sunsetPool;
-        vec3 sunLitCol = mix(cc, vec3(1.00, 0.89, 0.64), lit * lit * sunsetPool * 0.42);
-        // Subtle cool twilight indigo-violet depth toward far lower-right clouds
-        float farDusk = ss(0.45, 1.15, (p.x + p.y) / max(1.0, cssRes.x + cssRes.y));
-        sunLitCol = mix(sunLitCol, sunLitCol * vec3(0.82, 0.80, 1.02), farDusk * (1.0 - lit * 0.65) * 0.34);
-        // Glowing golden-tangerine twilight lining along thin sun-facing wisps!
-        sunLitCol += vec3(0.34, 0.14, 0.03) * silverRim * sunBoost;
+        float sunBoost = 0.76 + 0.56 * sunsetPool;
+        float farDusk = ss(0.32, 1.12, (p.x + p.y) / max(1.0, cssRes.x + cssRes.y));
+        // Near-sun cloud crowns ignite warm molten gold-apricot; far lower-right bellies sink into rich twilight plum-indigo!
+        vec3 sunLitCol = mix(cc, vec3(1.00, 0.88, 0.56), lit * lit * sunsetPool * 0.54);
+        sunLitCol = mix(sunLitCol, sunLitCol * vec3(0.74, 0.70, 1.04) + vec3(0.02, 0.015, 0.05), farDusk * (1.0 - lit * 0.58) * 0.46);
+        // Fiery golden-tangerine twilight forward-scattering rim along thin sun-facing wisps!
+        sunLitCol += vec3(0.42, 0.18, 0.035) * silverRim * sunBoost * (1.0 - farDusk * 0.35);
         cc = mix(cc, sunLitCol, sunset);
       }
 
@@ -1199,5 +1220,10 @@ void main() {
     }
   }
 
-  fragColor = vec4(col, 1.0);
+  // Subtle photographic filmic highlight rolloff (prevents harsh digital orange/yellow clipping in sun glare & clouds)
+  float fLum = dot(max(col, vec3(0.0)), vec3(0.2126, 0.7152, 0.0722));
+  vec3 mapped = max(col, vec3(0.0)) / (1.0 + max(0.0, fLum - 0.72) * 0.62);
+  mapped = mix(mapped, vec3(1.00, 0.97, 0.91), ss(0.76, 1.60, fLum) * 0.36);
+
+  fragColor = vec4(clamp(mapped, 0.0, 1.0), 1.0);
 }`;

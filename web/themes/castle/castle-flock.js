@@ -173,11 +173,12 @@ export function createAlpineFlock(gl, onReady) {
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, canvas.width, canvas.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
 
-  const cottageSpr  = loadSprite('assets/castle-cottage.png', onReady);
-  const shepherdSpr = loadSprite('assets/castle-shepherd.png', onReady);
-  const sheepGraze  = loadSprite('assets/castle-sheep-graze.png', onReady); // natural facing LEFT (-1)
-  const sheepStand  = loadSprite('assets/castle-sheep-stand.png', onReady); // natural facing LEFT (-1)
-  const sheepWalk   = loadSprite('assets/castle-sheep-walk.png', onReady, buildLeglessSheepBody); // natural facing RIGHT (+1)
+  const cottageSpr     = loadSprite('assets/castle-cottage.png', onReady);
+  const shepherdSpr    = loadSprite('assets/castle-shepherd.png', onReady);
+  const shepherdArmSpr = loadSprite('assets/castle-shepherd-arm.png', onReady);
+  const sheepGraze     = loadSprite('assets/castle-sheep-graze.png', onReady); // natural facing LEFT (-1)
+  const sheepStand     = loadSprite('assets/castle-sheep-stand.png', onReady); // natural facing LEFT (-1)
+  const sheepWalk      = loadSprite('assets/castle-sheep-walk.png', onReady, buildLeglessSheepBody); // natural facing RIGHT (+1)
 
   const cottage = { x: 260, y: 520, w: 236, h: 148, active: true, initialized: false, gustSmooth: 0.25 };
   const cottageSmoke = createSmokePlume({
@@ -198,8 +199,8 @@ export function createAlpineFlock(gl, onReady) {
 
   function getCottageChimneyMouth() {
     return {
-      x: cottage.x + (0.732 - 0.5) * cottage.w,
-      y: cottage.y - cottage.h * 0.855 + 0.146 * cottage.h
+      x: cottage.x + (0.533 - 0.5) * cottage.w,
+      y: cottage.y - cottage.h * 0.855 + 0.062 * cottage.h
     };
   }
 
@@ -209,6 +210,7 @@ export function createAlpineFlock(gl, onReady) {
     tx: 680, ty: 620,
     facing: 1,
     moveBlend: 0,
+    walkCycle: 0,
     walkPhase: 0,
     swayPhase: 0,
     gustSmooth: 0.25,
@@ -366,15 +368,21 @@ export function createAlpineFlock(gl, onReady) {
     const steerK = Math.min(1, dt * 4.5);
     shepherd.vx += (tvx - shepherd.vx) * steerK;
     shepherd.vy += (tvy - shepherd.vy) * steerK;
+    const prevShX = shepherd.x, prevShY = shepherd.y;
     shepherd.x += shepherd.vx * dt;
     shepherd.y += shepherd.vy * dt;
+    const shDist = Math.hypot(shepherd.x - prevShX, shepherd.y - prevShY);
 
     const shSpd = Math.hypot(shepherd.vx, shepherd.vy);
     if (Math.abs(shepherd.vx) > 2.2 * sc) shepherd.facing = shepherd.vx > 0 ? 1 : -1;
     const targetMove = Math.min(1, shSpd / Math.max(4, 10 * sc));
     shepherd.moveBlend += (targetMove - shepherd.moveBlend) * Math.min(1, dt * 6.0);
-    // Stride phase advances proportionally to actual ground speed (zero pop or stutter!)
-    shepherd.walkPhase += (shSpd / Math.max(6, 16 * sc)) * dt * 4.8;
+    // Exact ground-locked bipedal stride cycle: strideAmp(8.4) / STANCE(0.58) = 14.5*sc -> ZERO foot-slip!
+    const shStrideGroundLen = 14.5 * sc;
+    if (shDist > 0.0005) {
+      shepherd.walkCycle = (shepherd.walkCycle + shDist / Math.max(6, shStrideGroundLen)) % 1;
+    }
+    shepherd.walkPhase = shepherd.walkCycle * Math.PI * 2;
     // Tier-3 local wind at shepherd position (cloak sways right as the wind layer reaches the flock!)
     const shTargetGust = breeze ? breeze.sampleAt(shepherd.x / Math.max(1, W), shepherd.y, W, H) : gust;
     const shRate = shTargetGust > shepherd.gustSmooth ? 5.0 : 2.5;
@@ -491,58 +499,225 @@ export function createAlpineFlock(gl, onReady) {
     }
   }
 
-  /** Draws soft painterly meadow grass tufts & tiny flowers hugging the cottage base, swaying with wind */
+  /** Draws lush painterly meadow grass tufts & soft moss grounding the cottage foot organically into the hill */
   function drawCottageBaseTufts(x, y, w, sc, t, gust) {
     ctx.save();
+    // Soft mossy soil transition tucked right along the cottage stone wall & stucco base
+    ctx.fillStyle = 'rgba(54, 82, 34, 0.22)';
+    ctx.beginPath();
+    ctx.ellipse(x + 2 * sc, y + 0.8 * sc, w * 0.44, 3.6 * sc, 0, 0, Math.PI * 2);
+    ctx.fill();
+
     ctx.lineCap = 'round';
-    const windBend = (1.6 + gust * 4.4) * sc;
-    for (let i = -6; i <= 6; i++) {
-      const tx = x + (i / 6.5) * w * 0.45;
-      const ty = y + (Math.sin(i * 2.3) * 2.0) * sc;
-      const sway = windBend + Math.sin(t * 3.4 + i * 1.1) * (1.0 + gust * 1.4) * sc;
-      ctx.strokeStyle = (i & 1) ? '#3a6829' : '#4f8230';
-      ctx.lineWidth = Math.max(1.0, 1.45 * sc);
+    const windBend = (1.4 + gust * 4.2) * sc;
+    for (let i = -8; i <= 8; i++) {
+      const frac = i / 8.5;
+      const tx = x + frac * w * 0.44;
+      const ty = y + (Math.sin(i * 2.1) * 1.8 - (i < -3 ? 0.8 : 0)) * sc;
+      const sway = windBend + Math.sin(t * 3.1 + i * 1.15) * (0.9 + gust * 1.3) * sc;
       for (let b = -1; b <= 1; b++) {
-        const bx = tx + b * 2.2 * sc;
-        const h = (4.8 + ((i + b) & 1) * 1.8) * sc;
+        const bx = tx + b * 2.1 * sc;
+        const h = (4.2 + ((i * 3 + b * 5 + 16) % 3) * 1.9) * sc;
+        ctx.strokeStyle = b === 0 ? '#4d7c30' : ((i + b) & 1 ? '#365f26' : '#6f9c3b');
+        ctx.lineWidth = Math.max(0.95, (b === 0 ? 1.55 : 1.15) * sc);
         ctx.beginPath();
-        ctx.moveTo(bx, ty + 1.5 * sc);
-        ctx.quadraticCurveTo(bx + sway * 0.45, ty - h * 0.52, bx + b * 2.6 * sc + sway, ty - h);
+        ctx.moveTo(bx, ty + 1.8 * sc);
+        ctx.quadraticCurveTo(bx + sway * 0.38, ty - h * 0.55, bx + b * 2.5 * sc + sway, ty - h);
         ctx.stroke();
       }
-      // Subtle daisy/buttercup specks beside cottage stone base
-      if (i === -5 || i === -2 || i === 3 || i === 5) {
-        ctx.fillStyle = (i & 1) ? '#fdf9ec' : '#f9dc5e';
+      if (i === -7 || i === -3 || i === 2 || i === 6) {
+        ctx.fillStyle = (i & 1) ? '#faf4e2' : '#f4d35c';
         ctx.beginPath();
-        ctx.arc(tx + sway * 0.9, ty - 5.2 * sc, 1.45 * sc, 0, Math.PI * 2);
+        ctx.arc(tx + sway * 0.85, ty - 5.4 * sc, 1.35 * sc, 0, Math.PI * 2);
         ctx.fill();
       }
     }
     ctx.restore();
   }
 
-  function drawShepherdSprite(sx, sy, sc, gust) {
+  function shadowFillStyle(sunset, night, baseAlpha = 0.28) {
+    // Cool violet-plum shadows at sunset, deep moon-indigo at night, verdant shade in daytime
+    const r = Math.round(24 + sunset * 16 - night * 12);
+    const g = Math.round(48 - sunset * 18 - night * 26);
+    const b = Math.round(22 + sunset * 36 + night * 24);
+    const a = (baseAlpha + sunset * 0.07 + night * 0.04).toFixed(3);
+    return `rgba(${r}, ${g}, ${b}, ${a})`;
+  }
+
+  /** Draws a softly tapered painterly limb segment with delicate warm-umber gouache contour */
+  function drawTaperedLimb(x1, y1, x2, y2, r1, r2, fill, stroke, strokeW) {
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const len = Math.max(0.001, Math.hypot(dx, dy));
+    const nx = -dy / len;
+    const ny = dx / len;
+    ctx.beginPath();
+    ctx.moveTo(x1 + nx * r1, y1 + ny * r1);
+    ctx.lineTo(x2 + nx * r2, y2 + ny * r2);
+    ctx.lineTo(x2 - nx * r2, y2 - ny * r2);
+    ctx.lineTo(x1 - nx * r1, y1 - ny * r1);
+    ctx.closePath();
+    ctx.fillStyle = fill;
+    ctx.fill();
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = strokeW;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(x1, y1, r1 * 0.92, 0, Math.PI * 2);
+    ctx.arc(x2, y2, r2 * 0.92, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  /**
+   * Draws one anatomically proportioned 2-bone human leg + tapered walnut leather boot beneath the cloak
+   * (tall straight weight-bearing stance leg, relaxed low grass-skimming swing, 100% symmetric stride!).
+   */
+  function drawShepherdLeg(hipX, hipY, walkCycle, phaseOff, far, strideBlend, w, h, sc) {
+    const u = ((walkCycle + phaseOff) % 1 + 1) % 1;
+    const STANCE = 0.58;
+    const strideAmp = 8.4 * sc * strideBlend;
+    const liftAmp   = 2.35 * sc * strideBlend;
+
+    let stepX = 0;
+    let footLift = 0;
+    let bootTilt = 0;
+    if (u < STANCE) {
+      // Stance phase: boot sole stays flat & planted on grass; subtle heel-strike -> flat -> gentle toe push-off
+      const sU = u / STANCE;
+      stepX = strideAmp * (0.5 - sU);
+      footLift = 0;
+      if (sU < 0.14) {
+        bootTilt = -((0.14 - sU) / 0.14) * 0.14 * strideBlend;
+      } else if (sU > 0.80) {
+        bootTilt = ((sU - 0.80) / 0.20) * 0.22 * strideBlend;
+      }
+    } else {
+      // Swing phase: relaxed low meadow stroll (~2.3px clearance, NEVER high-knee marching!)
+      const t = (u - STANCE) / (1 - STANCE);
+      const ease = t * t * (3 - 2 * t);
+      stepX = strideAmp * (-0.5 + ease);
+      footLift = Math.sin(Math.PI * t) * liftAmp;
+      bootTilt = (0.18 * (1 - t) - 0.12 * t) * Math.sin(Math.PI * t) * strideBlend;
+    }
+
+    // Blend standing side-by-side rest offset out while walking so left & right steps are 100% symmetric (zero limp!)
+    const standOff = far ? -w * 0.055 : w * 0.052;
+    const walkOff  = far ? -w * 0.012 : w * 0.012;
+    const ankleX = standOff * (1 - strideBlend) + walkOff * strideBlend + stepX;
+    const ankleY = -1.65 * sc - footLift;
+
+    // True anatomical human leg proportions from hip (-0.415*h inside cloak) -> knee -> ankle
+    // Keeps planted weight-bearing leg tall & straight instead of crouching/squatting!
+    const L1 = h * 0.214;
+    const L2 = h * 0.206;
+    const dx = ankleX - hipX;
+    const dy = ankleY - hipY;
+    const raw = Math.hypot(dx, dy);
+    const dist = Math.max(4.0 * sc, Math.min(L1 + L2 - 0.15 * sc, raw));
+    const ux = dx / Math.max(0.001, raw);
+    const uy = dy / Math.max(0.001, raw);
+    const along = (L1 * L1 - L2 * L2 + dist * dist) / (2 * dist);
+    const bend = Math.sqrt(Math.max(0, L1 * L1 - along * along));
+    const kx = hipX + ux * along + uy * bend; // human knee flexes gently forward (+x)
+    const ky = hipY + uy * along - ux * bend;
+
+    const trouserCol = far ? '#4c5046' : '#626558';
+    const bootCol    = far ? '#422e23' : '#5c4130';
+    const bootHi     = '#7a5a44';
+    const inkCol     = '#34261e';
+
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    // 1. Tapered olive-taupe trouser thigh tucked beneath draping cloak
+    drawTaperedLimb(hipX, hipY, kx, ky, 2.2 * sc, 1.85 * sc, trouserCol, inkCol, 0.72 * sc);
+
+    // 2. Tapered walnut leather boot shaft (full calf -> slender ankle, matches gouache cloak!)
+    drawTaperedLimb(kx, ky, ankleX, ankleY, 1.78 * sc, 1.26 * sc, bootCol, inkCol, 0.72 * sc);
+    if (!far) {
+      ctx.strokeStyle = bootHi;
+      ctx.lineWidth = 0.85 * sc;
+      ctx.beginPath();
+      ctx.moveTo(kx + 0.45 * sc, ky + 1.2 * sc);
+      ctx.lineTo(ankleX + 0.35 * sc, ankleY - 0.8 * sc);
+      ctx.stroke();
+    }
+
+    // 3. Sculpted leather boot foot & low heel pivoting smoothly with ankle stride
+    ctx.translate(ankleX, ankleY);
+    ctx.rotate(bootTilt);
+    ctx.fillStyle = bootCol;
+    ctx.strokeStyle = inkCol;
+    ctx.lineWidth = 0.72 * sc;
+    ctx.beginPath();
+    ctx.moveTo(-1.8 * sc, -1.0 * sc);
+    ctx.lineTo(1.4 * sc, -0.65 * sc);
+    ctx.quadraticCurveTo(4.1 * sc, -0.05 * sc, 4.4 * sc, 1.35 * sc);
+    ctx.lineTo(0.8 * sc, 1.50 * sc);
+    ctx.lineTo(-1.9 * sc, 1.42 * sc);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawShepherdSprite(sx, sy, sc, gust, sunset, night, W) {
     if (!shepherdSpr.ready) return;
-    const h = 50 * sc;
-    const w = h * (128 / 192);
-    // Smooth differentiable stride bob (1 - cos(2*phase))/2 scaled by eased moveBlend — ZERO snap/cusp!
-    const bob = (0.5 - 0.5 * Math.cos(shepherd.walkPhase * 2.0)) * 1.35 * sc * shepherd.moveBlend;
-    // Gentle monotonic cloak breeze sway + subtle forward walking posture lean
-    const walkLean = 0.032 * shepherd.moveBlend + Math.sin(shepherd.walkPhase) * 0.018 * shepherd.moveBlend;
-    const breezeSway = Math.sin(shepherd.swayPhase) * (0.012 + gust * 0.016) + gust * 0.012;
+    const h = 56 * sc;
+    const w = h * (256 / 384);
+    const strideBlend = Math.min(1, shepherd.moveBlend);
+
+    // Gentle natural bipedal stride bob (highest over mid-stance u=0.25/0.75, lowest at foot-strike u=0/0.5!)
+    const bob = (0.5 - 0.5 * Math.cos(shepherd.walkPhase * 2.0)) * 0.95 * sc * strideBlend;
+    const walkLean = 0.024 * strideBlend + Math.sin(shepherd.walkPhase * 2.0) * 0.008 * strideBlend;
+    const breezeSway = Math.sin(shepherd.swayPhase) * (0.007 + gust * 0.011) + gust * 0.008;
 
     ctx.save();
     ctx.translate(sx, sy);
 
-    ctx.fillStyle = 'rgba(24, 48, 20, 0.30)';
+    // True radial perspective shadow away from Setting Sun pass (x = 0.43*W) & Moon (x = 0.80*W)!
+    const sunDirX = Math.max(-1.2, Math.min(1.2, (sx / Math.max(1, W) - 0.43) * 3.2));
+    const shOffX = (2 + sunset * 12.5 * sunDirX - night * 6.0) * sc;
+    const shOffY = (1.2 + sunset * 3.4 + night * 1.5) * sc;
+    const shRadX = (10.5 + sunset * (9.5 + Math.abs(sunDirX) * 6.0) + night * 5.0) * sc;
+    const shRadY = (3.4 + sunset * 1.4 + night * 0.8) * sc;
+    ctx.fillStyle = shadowFillStyle(sunset, night, 0.30);
     ctx.beginPath();
-    ctx.ellipse(2 * sc, 1.5 * sc, 11.5 * sc, 3.8 * sc, 0, 0, Math.PI * 2);
+    ctx.ellipse(shOffX, shOffY, shRadX, shRadY, sunset * 0.12 * sunDirX - night * 0.08, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.translate(0, -bob);
     ctx.scale(shepherd.facing, 1);
+
+    // 1. Two tall anatomical walking legs & leather boots (far behind near, emerging naturally below cloak hem!)
+    const hipY = -h * 0.415 - bob;
+    drawShepherdLeg(-w * 0.020, hipY, shepherd.walkCycle, 0.50, true,  strideBlend, w, h, sc);
+    drawShepherdLeg( w * 0.025, hipY, shepherd.walkCycle, 0.00, false, strideBlend, w, h, sc);
+
+    // 2. Hand-painted watercolor hooded cloak + satchel riding smoothly over stepping legs
+    ctx.save();
+    ctx.translate(0, -bob);
     ctx.rotate(walkLean + breezeSway * shepherd.facing);
     ctx.drawImage(shepherdSpr.img, -w * 0.5, -h * 0.94, w, h);
+
+    // 3. Dignified counter-phase right forearm & wooden shepherd's crook (tip glides cleanly along grass line!)
+    if (shepherdArmSpr.ready) {
+      const pivX = -w * 0.5 + 0.655 * w;
+      const pivY = -h * 0.94 + 0.405 * h;
+      const armWave      = -Math.sin(shepherd.walkPhase + 0.25);
+      const walkArmSwing = armWave * 0.135 * strideBlend;
+      const idleArmSway  = Math.sin(shepherd.swayPhase * 0.62) * 0.026 * (1 - strideBlend * 0.65);
+      // Compensates circular pivot arc so the bottom tip of the staff glides along grass without stabbing underground
+      const staffLift    = (Math.max(0, -armWave) * 1.8 + Math.abs(armWave) * 0.65) * sc * strideBlend;
+
+      ctx.save();
+      ctx.translate(pivX, pivY - staffLift);
+      ctx.rotate(walkArmSwing + idleArmSway);
+      ctx.drawImage(shepherdArmSpr.img, -0.655 * w, -0.405 * h, w, h);
+      ctx.restore();
+    }
+
+    ctx.restore();
     ctx.restore();
   }
 
@@ -624,7 +799,7 @@ export function createAlpineFlock(gl, onReady) {
     ctx.restore();
   }
 
-  function drawSheepSprite(sh, sc) {
+  function drawSheepSprite(sh, sc, sunset, night, W) {
     const s = sh.size * sc;
     const w = 36 * s;
     const h = w * (96 / 128);
@@ -632,10 +807,15 @@ export function createAlpineFlock(gl, onReady) {
     ctx.save();
     ctx.translate(sh.x, sh.y);
 
-    // Soft grounded meadow shadow
-    ctx.fillStyle = 'rgba(24, 50, 18, 0.28)';
+    // True radial perspective meadow shadow stretching away from the open sun pass (0.43*W)!
+    const sunDirX = Math.max(-1.2, Math.min(1.2, (sh.x / Math.max(1, W) - 0.43) * 3.2));
+    const shOffX = (1.5 + sunset * 8.2 * sunDirX - night * 4.5) * s;
+    const shOffY = (1.2 + sunset * 2.4 + night * 1.0) * s;
+    const shRadX = (12.2 + sunset * (6.5 + Math.abs(sunDirX) * 4.2) + night * 3.8) * s;
+    const shRadY = (3.8 + sunset * 1.2 + night * 0.6) * s;
+    ctx.fillStyle = shadowFillStyle(sunset, night, 0.28);
     ctx.beginPath();
-    ctx.ellipse(1.5 * s, 1.2 * s, 12.2 * s, 3.8 * s, 0, 0, Math.PI * 2);
+    ctx.ellipse(shOffX, shOffY, shRadX, shRadY, sunset * 0.10 * sunDirX - night * 0.06, 0, Math.PI * 2);
     ctx.fill();
 
     // Walking state: draw articulated 4-beat quadruped legs + legless watercolor torso!
@@ -704,11 +884,16 @@ export function createAlpineFlock(gl, onReady) {
           const m = getCottageChimneyMouth();
           cottageSmoke.draw(ctx, m.x, m.y, sc);
 
-          // Grounded cottage shadow
+          // Grounded cottage shadow (radiates naturally away from setting sun pass 0.43*W!)
           ctx.save();
-          ctx.fillStyle = 'rgba(24, 48, 22, 0.28)';
+          ctx.fillStyle = shadowFillStyle(sunset, night, 0.28);
           ctx.beginPath();
-          ctx.ellipse(cottage.x + 8 * sc, cottage.y + 2.5 * sc, cottage.w * 0.45, cottage.h * 0.10, 0, 0, Math.PI * 2);
+          const cDirX = Math.max(-1.2, Math.min(1.2, (cottage.x / Math.max(1, W) - 0.43) * 3.2));
+          const cShX = cottage.x + (8 + sunset * 28 * cDirX - night * 16) * sc;
+          const cShY = cottage.y + (2.5 + sunset * 8.5 + night * 3.5) * sc;
+          const cRadX = cottage.w * (0.45 + sunset * 0.20 + night * 0.10);
+          const cRadY = cottage.h * (0.10 + sunset * 0.048 + night * 0.02);
+          ctx.ellipse(cShX, cShY, cRadX, cRadY, sunset * 0.10 * cDirX - night * 0.06, 0, Math.PI * 2);
           ctx.fill();
           ctx.restore();
 
@@ -716,18 +901,22 @@ export function createAlpineFlock(gl, onReady) {
           const dy = cottage.y - cottage.h * 0.855;
           ctx.drawImage(cottageSpr.img, dx, dy, cottage.w, cottage.h);
 
-          // Cozy warm golden candlelight glow inside front cottage window (pre-baked halo, zero per-frame gradient!)
+          // Cozy warm golden candlelight glow inside recessed 4-pane cottage window (preserves wood mullions!)
           if (warmWindowAmt > 0.04) {
-            const wx = dx + cottage.w * 0.658;
-            const wy = dy + cottage.h * 0.618;
-            const ww = cottage.w * 0.052;
-            const wh = cottage.h * 0.095;
+            const wx = dx + cottage.w * 0.722;
+            const wy = dy + cottage.h * 0.526;
+            const ww = cottage.w * 0.064;
+            const wh = cottage.h * 0.144;
             const flicker = 0.92 + 0.08 * Math.sin(t * 4.2);
             ctx.save();
-            ctx.globalAlpha = warmWindowAmt * 0.90 * flicker;
-            ctx.fillStyle = '#ffcf6b';
+            ctx.globalAlpha = warmWindowAmt * 0.86 * flicker;
+            ctx.fillStyle = '#ffcb62';
             ctx.fillRect(wx, wy, ww, wh);
-            ctx.drawImage(windowGlowSpr, wx - ww * 2, wy - wh * 1.5, ww * 5, wh * 4);
+            // Delicate timber mullion crossbars over the warm glowing panes
+            ctx.fillStyle = '#473628';
+            ctx.fillRect(wx + ww * 0.46, wy, ww * 0.09, wh);
+            ctx.fillRect(wx, wy + wh * 0.46, ww, wh * 0.08);
+            ctx.drawImage(windowGlowSpr, wx - ww * 1.6, wy - wh * 1.2, ww * 4.2, wh * 3.4);
             ctx.restore();
           }
 
@@ -739,13 +928,13 @@ export function createAlpineFlock(gl, onReady) {
 
     drawList.push({
       y: shepherd.y,
-      draw: () => drawShepherdSprite(shepherd.x, shepherd.y, sc, shepherd.gustSmooth)
+      draw: () => drawShepherdSprite(shepherd.x, shepherd.y, sc, shepherd.gustSmooth, sunset, night, W)
     });
 
     for (const sh of sheep) {
       drawList.push({
         y: sh.y,
-        draw: () => drawSheepSprite(sh, sc)
+        draw: () => drawSheepSprite(sh, sc, sunset, night, W)
       });
     }
 
