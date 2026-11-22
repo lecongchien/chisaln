@@ -4,7 +4,6 @@
  *   - Hero Flying Sky Galleon buoyant pitch/heave & continuous bow/stern cloud-wake plumes
  *   - Companion Escort Skiff sailing smoothly with out-of-phase buoyancy on the left
  *   - Soaring Winged Sky Glider banking with real roll tilt, SDF icon avoidance & wingtip wind trails
- *   - Optional poetic Lookout Platform & Wind-Swept Figure emerging from the right cloud bank
  */
 import { createSmokePlume } from '../castle/castle-smoke.js';
 
@@ -265,107 +264,7 @@ export function createSkyshipFleet(gl, onReady) {
     ctx.restore();
   }
 
-  /** Draws the poetic diving-board lookout ledge & wind-swept figure on the right cloud bank */
-  function drawLookoutLedge(W, H, sc, t, wind) {
-    const lx = W * 0.72;
-    const ly = H * 0.605;
-    const boardLen = 78 * sc;
-    const boardH = 7.5 * sc;
-
-    ctx.save();
-    ctx.translate(lx, ly);
-
-    // Steel ladder descending into the billowing right cloud bank
-    ctx.strokeStyle = '#333b52';
-    ctx.lineWidth = 1.8 * sc;
-    const ladX = boardLen * 0.20;
-    const ladH = 38 * sc;
-    ctx.beginPath();
-    ctx.moveTo(ladX, boardH * 0.8);
-    ctx.lineTo(ladX - 3 * sc, ladH);
-    ctx.moveTo(ladX + 8.5 * sc, boardH * 0.8);
-    ctx.lineTo(ladX + 5.5 * sc, ladH);
-    for (let r = 1; r <= 4; r++) {
-      const ry = boardH + r * 6.5 * sc;
-      const rx = ladX - (r / 5) * 2.5 * sc;
-      ctx.moveTo(rx, ry);
-      ctx.lineTo(rx + 8.5 * sc, ry);
-    }
-    ctx.stroke();
-
-    // Perspective sky-plank / diving board jutting out over the cloud abyss
-    ctx.fillStyle = '#4e5d7a';
-    ctx.beginPath();
-    ctx.moveTo(-boardLen * 0.52, -boardH * 0.15);
-    ctx.lineTo(boardLen * 0.50, -boardH * 0.60);
-    ctx.lineTo(boardLen * 0.56, boardH * 0.28);
-    ctx.lineTo(-boardLen * 0.52, boardH * 0.55);
-    ctx.closePath();
-    ctx.fill();
-
-    // Sunlit top face of plank
-    ctx.fillStyle = '#8b9db8';
-    ctx.beginPath();
-    ctx.moveTo(-boardLen * 0.52, -boardH * 0.15);
-    ctx.lineTo(boardLen * 0.50, -boardH * 0.60);
-    ctx.lineTo(boardLen * 0.52, -boardH * 0.12);
-    ctx.lineTo(-boardLen * 0.52, boardH * 0.14);
-    ctx.closePath();
-    ctx.fill();
-
-    // Tiny wind-swept silhouette standing at the tip with outstretched arms welcoming the sky breeze!
-    const fx = -boardLen * 0.34;
-    const fy = -boardH * 0.15;
-    const fh = 24 * sc;
-    const flutter = Math.sin(t * (4.5 + wind * 2.2)) * 1.4 * sc;
-
-    ctx.translate(fx, fy);
-    // Legs
-    ctx.strokeStyle = '#2b2d3b';
-    ctx.lineWidth = 1.75 * sc;
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.moveTo(-1.8 * sc, 0); ctx.lineTo(-1.3 * sc, -fh * 0.42);
-    ctx.moveTo( 1.8 * sc, 0); ctx.lineTo( 1.3 * sc, -fh * 0.42);
-    ctx.stroke();
-
-    // White breeze-blown shirt / tunic
-    ctx.fillStyle = '#f2ede2';
-    ctx.beginPath();
-    ctx.moveTo(-2.6 * sc, -fh * 0.40);
-    ctx.lineTo( 2.8 * sc + flutter * 0.35, -fh * 0.40);
-    ctx.lineTo( 2.4 * sc, -fh * 0.78);
-    ctx.lineTo(-2.4 * sc, -fh * 0.78);
-    ctx.closePath();
-    ctx.fill();
-
-    // Outstretched arms welcoming the sky wind
-    const armWave = Math.sin(t * 2.1) * 0.8 * sc;
-    ctx.strokeStyle = '#e8d2be';
-    ctx.lineWidth = 1.55 * sc;
-    ctx.beginPath();
-    ctx.moveTo(-2.2 * sc, -fh * 0.74);
-    ctx.lineTo(-8.8 * sc, -fh * 0.78 + armWave);
-    ctx.moveTo( 2.2 * sc, -fh * 0.74);
-    ctx.lineTo( 8.8 * sc, -fh * 0.77 - armWave);
-    ctx.stroke();
-
-    // Head + wind-blown hair streamer
-    ctx.fillStyle = '#332d34';
-    ctx.beginPath();
-    ctx.arc(0, -fh * 0.88, 2.3 * sc, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = '#332d34';
-    ctx.lineWidth = 1.3 * sc;
-    ctx.beginPath();
-    ctx.moveTo(1.5 * sc, -fh * 0.88);
-    ctx.quadraticCurveTo(4.2 * sc, -fh * 0.90 + flutter * 0.5, 6.2 * sc + flutter * 0.6, -fh * 0.84 + flutter * 0.4);
-    ctx.stroke();
-
-    ctx.restore();
-  }
-
-  function renderAndUpload(t, { W, H, flow, showEscort, showGlider, showLookout }) {
+  function renderAndUpload(t, { W, H, flow, showEscort, showGlider }) {
     const sx = canvas.width / Math.max(1, W);
     const sy = canvas.height / Math.max(1, H);
     const sc = Math.max(0.55, Math.min(1.18, Math.min(W, H) / 860));
@@ -378,12 +277,7 @@ export function createSkyshipFleet(gl, onReady) {
     bowWake.draw(ctx, state.galleonRect[0] + state.galleonRect[2] * 0.31, state.galleonRect[1] + state.galleonRect[3] * 0.85, sc);
     sternWake.draw(ctx, state.galleonRect[0] + state.galleonRect[2] * 0.78, state.galleonRect[1] + state.galleonRect[3] * 0.86, sc);
 
-    // 2. Poetic Lookout Platform & Wind-Swept Figure on right cloud bank (optional toggle)
-    if (showLookout >= 0.5) {
-      drawLookoutLedge(W, H, sc, t, Math.max(0.1, flow));
-    }
-
-    // 3. Foreground Soaring Winged Sky Glider + Dual Wingtip Wind Trails!
+    // 2. Foreground Soaring Winged Sky Glider + Dual Wingtip Wind Trails!
     // (Escort Sky-Skiff now renders directly in WebGL2 with live GPU cloth-billowing sails!)
     if (showGlider >= 0.5 && gliderSpr.ready) {
       const glid = state.glider;

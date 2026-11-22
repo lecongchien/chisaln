@@ -111,7 +111,8 @@ export const THEME_THUMBS = {
   beach: './assets/thumb-beach.jpg',
   meadow: './assets/thumb-meadow.jpg',
   castle: './assets/thumb-castle.jpg',
-  skyship: './assets/thumb-skyship.jpg'
+  skyship: './assets/thumb-skyship.jpg',
+  seatrain: './assets/thumb-seatrain.jpg'
 };
 
 export const THEME_SUBTITLES = {
@@ -130,5 +131,9 @@ export const THEME_SUBTITLES = {
   skyship: {
     vi: 'Biển mây ráng chiều · Thuyền buồm bay',
     en: 'Golden cloud sea · Flying Galleon'
+  },
+  seatrain: {
+    vi: 'Biển gương hoàng hôn · Tàu 2 toa & Ga nước',
+    en: 'Sunset mirror sea · Sea Train & Station'
   }
 };

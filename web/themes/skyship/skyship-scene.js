@@ -26,8 +26,7 @@ const DEFAULTS = {
   flow: 1.0,
   showMeteors: 1,
   showEscort: 1,
-  showGlider: 1,
-  showLookout: 1
+  showGlider: 1
 };
 const P = { ...DEFAULTS };
 
@@ -209,8 +208,7 @@ function renderFrame(t) {
     W, H,
     flow: P.flow,
     showEscort: P.showEscort,
-    showGlider: P.showGlider,
-    showLookout: P.showLookout
+    showGlider: P.showGlider
   });
 
   gl.viewport(0, 0, glCanvas.width, glCanvas.height);

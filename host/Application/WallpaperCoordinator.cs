@@ -356,7 +356,7 @@ namespace Scream.Application
         private void ToggleMeadowNight()
         {
             string activeTheme = _store.Current.Theme;
-            if (activeTheme != "beach" && activeTheme != "meadow" && activeTheme != "castle" && activeTheme != "skyship")
+            if (activeTheme != "beach" && activeTheme != "meadow" && activeTheme != "castle" && activeTheme != "skyship" && activeTheme != "seatrain")
                 activeTheme = "meadow";
 
             var cur = _store.GetEffectiveParams(activeTheme);

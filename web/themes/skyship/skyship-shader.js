@@ -5,7 +5,7 @@
  *   2. Towering Background Cumulus Ridges + Off-Screen Parallel Diagonal Crepuscular God-Rays
  *   3. Hero 3-Masted Sky Galleon with LIVE wind-billowing sail UV wave + warm stern cabin lanterns
  *   4. Foreground Billowing Cloud Sea wrapping cleanly OVER the galleon's lower keel + Adaptive Icon Clouds
- *   5. Foreground Sky Fleet Overlay (Escort Skiff, Soaring Winged Glider, Cloud Wake, Lookout Ledge)
+ *   5. Foreground Sky Fleet Overlay (Escort Skiff, Soaring Winged Glider, Cloud Wake)
  *   6. Distant Sky Birds + Unified Stationary Gouache Paper Grain + Golden Sky Motes + Filmic Rolloff
  */
 
@@ -657,7 +657,7 @@ void main() {
   }
 
   // =========================================================================
-  // 5. FOREGROUND FLEET OVERLAY (WINGED GLIDER, CLOUD WAKE & LOOKOUT)
+  // 5. FOREGROUND FLEET OVERLAY (WINGED GLIDER & CLOUD WAKE)
   // =========================================================================
   vec2 screenUV = p / cssRes;
   vec4 fg = texture(uFgTex, screenUV);

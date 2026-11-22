@@ -500,16 +500,147 @@
                 "en": ["Hide", "Show"]
               },
               "default": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "seatrain",
+      "page": "seatrain.html",
+      "status": "ready",
+      "name": {
+        "vi": "Chuyến tàu trên Biển Gương",
+        "en": "Sea Railway"
+      },
+      "desc": {
+        "vi": "Đoàn tàu 5 toa cổ điển lướt êm từ xa trên mặt biển gương phản chiếu ráng mây hoàng hôn, hào quang sao đêm và ga gỗ hàng rào trắng phong cách Ghibli.",
+        "en": "A distant vintage five-car sea train gliding across a mirror-flat ocean reflecting towering sunset clouds, starlight auras, and a wooden station."
+      },
+      "accent": "#C96A53",
+      "groups": [
+        {
+          "name": { "vi": "Bầu trời & Biển gương", "en": "Sky & Mirror Sea" },
+          "params": [
+            {
+              "key": "timeMode",
+              "label": { "vi": "Thời gian trong ngày", "en": "Time of Day" },
+              "hint": { "vi": "Nắng hạ trong veo, hoàng hôn chiều tà, đêm ngân hà đèn tàu hoặc tự động theo giờ", "en": "Switch between summer sky, golden twilight sunset, starlit night, or auto local time" },
+              "options": {
+                "vi": ["Ban ngày", "Hoàng hôn", "Ban đêm", "Tự động"],
+                "en": ["Day", "Sunset", "Night", "Auto"]
+              },
+              "default": 1
             },
             {
-              "key": "showLookout",
-              "label": { "vi": "Bệ ngắm biển mây", "en": "Cloud Lookout" },
-              "hint": { "vi": "Bệ ván nhỏ nhô ra từ tầng mây phải cùng bóng người đón gió", "en": "Poetic diving-ledge silhouette welcoming the sky breeze on the right cloud bank" },
+              "key": "clouds",
+              "label": { "vi": "Độ dày mây trời", "en": "Cumulus Volume" },
+              "hint": { "vi": "Độ hoành tráng của dãy mây tích tầng cuồn cuộn phía sau đoàn tàu", "en": "Scale and fullness of the towering Ghibli cumulus clouds" },
+              "min": 0.25,
+              "max": 1.0,
+              "step": 0.05,
+              "default": 0.85,
+              "format": "percent"
+            },
+            {
+              "key": "ripple",
+              "label": { "vi": "Độ gợn mặt gương", "en": "Mirror Ripples" },
+              "hint": { "vi": "Từ mặt nước phẳng lặng như kính đến gợn sóng gió lăn tăn", "en": "Gentle horizontal shimmer across the mirror sea reflection" },
+              "min": 0,
+              "max": 1.0,
+              "step": 0.05,
+              "default": 0.30,
+              "format": "percent"
+            },
+            {
+              "key": "flow",
+              "label": { "vi": "Tốc độ hành trình", "en": "Journey Speed" },
+              "hint": { "vi": "Tốc độ lướt của đoàn tàu, mây trôi và các cảnh vật ngang chân trời", "en": "Speed of the tracking camera, scrolling landmarks, and drifting clouds" },
+              "min": 0,
+              "max": 2.4,
+              "step": 0.05,
+              "default": 1.0,
+              "format": "times"
+            }
+          ]
+        },
+        {
+          "name": { "vi": "Đoàn tàu & Cảnh dọc đường", "en": "Sea Train & Landmarks" },
+          "params": [
+            {
+              "key": "trainMode",
+              "label": { "vi": "Nhịp chuyến tàu", "en": "Train Journey" },
+              "hint": { "vi": "Bám theo tàu lướt liên tục qua biển gương, dừng ghé ga hay đứng yên ngắm cảnh", "en": "Tracking camera continuous sea cruise, station stop cycle, or serene docked stillness" },
+              "options": {
+                "vi": ["Lướt bất tận", "Dừng ghé ga", "Đứng tại ga"],
+                "en": ["Endless Glide", "Station Stop", "Docked Still"]
+              },
+              "default": 0
+            },
+            {
+              "key": "showStation",
+              "label": { "vi": "Ga nước hàng rào trắng", "en": "Flooded Station" },
+              "hint": { "vi": "Sân ga gỗ ngập nước, nhà chờ tối và cột đèn tín hiệu trôi ngang phía sau tàu", "en": "Flooded Sixth Station timber platform & signal pole gliding past" },
               "options": {
                 "vi": ["Ẩn", "Hiện"],
                 "en": ["Hide", "Show"]
               },
               "default": 1
+            },
+            {
+              "key": "showIsland",
+              "label": { "vi": "Ngôi nhà đảo nhỏ", "en": "Lonely Island House" },
+              "hint": { "vi": "Hòn đảo cỏ nhỏ với ngôi nhà mái dốc và một bóng cây đơn độc trôi qua chân trời", "en": "Iconic tiny grassy island with gabled cottage and lone green tree" },
+              "options": {
+                "vi": ["Ẩn", "Hiện"],
+                "en": ["Hide", "Show"]
+              },
+              "default": 1
+            },
+            {
+              "key": "showPassing",
+              "label": { "vi": "Đoàn tàu chạy ngược chiều", "en": "Passing Counter-Train" },
+              "hint": { "vi": "Bóng đoàn tàu ngược chiều lướt ngang tiền cảnh tạo khoảnh khắc điện ảnh", "en": "Silhouetted counter-bound train gliding swiftly across the foreground" },
+              "options": {
+                "vi": ["Ẩn", "Hiện"],
+                "en": ["Hide", "Show"]
+              },
+              "default": 1
+            }
+          ]
+        },
+        {
+          "name": { "vi": "Thích ứng biểu tượng", "en": "Adaptive Icons" },
+          "params": [
+            {
+              "key": "adaptive",
+              "label": { "vi": "Cực quang & Sóng gương", "en": "Aurora Curtains & Ripples" },
+              "hint": { "vi": "Ban đêm dải cực quang xanh lục bốc rèm sáng dọc theo vùng icon và phản chiếu xuống biển, ban ngày/hoàng hôn tỏa sương ánh sáng êm dịu", "en": "Volumetric green Aurora Borealis curtains rising along sky icons at night (mirrored in the sea); concentric ripples on water" },
+              "options": {
+                "vi": ["Tắt", "Bật"],
+                "en": ["Off", "On"]
+              },
+              "default": 1
+            },
+            {
+              "key": "sigma",
+              "label": { "vi": "Vùng đệm quanh icon", "en": "Icon Cushion Size" },
+              "hint": { "vi": "Độ nở rộng của đệm mây trời và vùng sóng quanh biểu tượng", "en": "Extent of cloud cushions and water ripples around icons" },
+              "min": 42,
+              "max": 160,
+              "step": 1,
+              "default": 72,
+              "unit": "px"
+            },
+            {
+              "key": "warp",
+              "label": { "vi": "Độ uốn tự nhiên", "en": "Edge Organic Warp" },
+              "hint": { "vi": "Độ mềm tự nhiên của viền mây quanh icon", "en": "Natural contour billow around icon clouds" },
+              "min": 0,
+              "max": 72,
+              "step": 1,
+              "default": 34,
+              "unit": ""
             }
           ]
         }
