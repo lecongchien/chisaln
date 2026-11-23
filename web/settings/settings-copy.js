@@ -153,7 +153,7 @@ export const THEME_SUBTITLES = {
     en: 'Golden cloud sea · Flying Galleon'
   },
   seatrain: {
-    vi: 'Biển gương hoàng hôn · Tàu 2 toa & Ga nước',
-    en: 'Sunset mirror sea · Sea Train & Station'
+    vi: 'Biển gương · Ngoài tàu & Trong toa',
+    en: 'Mirror sea · Exterior & Cabin view'
   }
 };

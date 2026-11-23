@@ -1,8 +1,14 @@
 /**
  * Sea Railway Theme Scene Controller — "Chuyến tàu trên Biển Gương"
- * Orchestrates hand-painted seamless Studio Ghibli cumulus panorama, Flooded Sixth Station,
- * Lonely Island Cottage & Tree, Hero 2-Car Sea Train + Passing Backlit Silhouette Train,
- * true projective mirror sea glints, AdaptiveField SDF icons, and 60 FPS WebGL2 rendering.
+ * Supports TWO instant seamlessly integrated camera views under one unified theme (`viewMode`):
+ *   - viewMode = 0 ("Ngoài tàu"): Distant 5-Car Vintage Sea Train gliding across the mirror sea,
+ *     Flooded Sixth Station, Lonely Island Cottage, Passing Counter-Train, Quarter-Res 3D Volumetric Aurora,
+ *     and Real Birth-Date 3D Lunar Phase (`uMoonTex`).
+ *   - viewMode = 1 ("Trong toa"): Exact Spirited Away central-aisle one-point perspective cabin interior
+ *     (lazily initialized on first switch for 0% overhead in exterior view!), with 2 receding rows of 6 swinging
+ *     pendulum hand-straps + live floor ring shadows, slanted aisle sunbeam bars, 4 receding brass ceiling lamps,
+ *     5 translucent shadow passengers, Chihiro looking up at towering No-Face, passing perspective utility poles,
+ *     and the same Real Birth-Date 3D Lunar Phase visible through the night cabin window!
  */
 import {
   AdaptiveField,
@@ -18,16 +24,26 @@ import { createHostBridge } from '../../core/host-bridge.js';
 import { resolveMoonConfig, createMoonSurfaceLoader } from '../../core/moon-phase.js';
 import { SEATRAIN_FS, SEATRAIN_AURORA_FS } from './seatrain-shader.js';
 import { createSeaTrainController } from './seatrain-props.js';
+import { CABIN_FS } from '../cabin/cabin-shader.js';
+import { createCabinLivingEngine } from '../cabin/cabin-props.js';
 
 const DEFAULTS = {
-  timeMode: 1,     // 0 = Day, 1 = Golden Sunset (signature default!), 2 = Starlit Night, 3 = Auto
-  trainMode: 0,    // 0 = Endless Tracking Journey, 1 = Station Stop Cycle, 2 = Docked Still
+  viewMode: 0,     // 0 = Exterior ("Ngoài tàu"), 1 = Inside Cabin ("Trong toa")
+  timeMode: 1,     // 0 = Day, 1 = Golden Sunset, 2 = Starlit Night, 3 = Auto
+  trainMode: 0,    // Exterior: 0 = Endless Glide, 1 = Station Stop, 2 = Docked Still
   clouds: 0.85,
   ripple: 0.30,
   flow: 1.0,
   showStation: 1,
   showIsland: 1,
   showPassing: 1,
+  // Interior Cabin View controls
+  shake: 0.65,
+  showNoFace: 1,
+  showStraps: 1,
+  showPoles: 1,
+  showDust: 1,
+  // Shared Adaptive Desktop Icon SDF controls
   adaptive: 1,
   sigma: 72,
   warp: 34
@@ -110,6 +126,59 @@ const UA = {
   uAdaptive: gl.getUniformLocation(auroraProg, 'uAdaptive'),
   uNight: gl.getUniformLocation(auroraProg, 'uNight')
 };
+
+// Lazy Cabin Interior pipeline — allocated on first switch to viewMode = 1 (zero startup/VRAM cost in exterior mode!)
+let cabinProg = null;
+let UC = null;
+let cabinCtrl = null;
+let cabinOverlayDirty = true;
+
+function ensureCabinInitialized() {
+  if (cabinProg && cabinCtrl) return;
+  cabinProg = createShaderProgram(gl, CABIN_FS);
+  UC = {
+    uFA: gl.getUniformLocation(cabinProg, 'uFA'),
+    uFB: gl.getUniformLocation(cabinProg, 'uFB'),
+    uNoise: gl.getUniformLocation(cabinProg, 'uNoise'),
+    uCabinTex: gl.getUniformLocation(cabinProg, 'uCabinTex'),
+    uNoFaceTex: gl.getUniformLocation(cabinProg, 'uNoFaceTex'),
+    uLiveTex: gl.getUniformLocation(cabinProg, 'uLiveTex'),
+    uCloudsTex: gl.getUniformLocation(cabinProg, 'uCloudsTex'),
+    uMoonTex: gl.getUniformLocation(cabinProg, 'uMoonTex'),
+    uRes: gl.getUniformLocation(cabinProg, 'uRes'),
+    uGrid: gl.getUniformLocation(cabinProg, 'uGrid'),
+    uStep: gl.getUniformLocation(cabinProg, 'uStep'),
+    uDpr: gl.getUniformLocation(cabinProg, 'uDpr'),
+    uMix: gl.getUniformLocation(cabinProg, 'uMix'),
+    uTime: gl.getUniformLocation(cabinProg, 'uTime'),
+    uWindTime: gl.getUniformLocation(cabinProg, 'uWindTime'),
+    uWorldScroll: gl.getUniformLocation(cabinProg, 'uWorldScroll'),
+    uAdaptive: gl.getUniformLocation(cabinProg, 'uAdaptive'),
+    uSunset: gl.getUniformLocation(cabinProg, 'uSunset'),
+    uNight: gl.getUniformLocation(cabinProg, 'uNight'),
+    uMoonPhase: gl.getUniformLocation(cabinProg, 'uMoonPhase'),
+    uShowNoFace: gl.getUniformLocation(cabinProg, 'uShowNoFace'),
+    uShowPoles: gl.getUniformLocation(cabinProg, 'uShowPoles'),
+    uCabinReady: gl.getUniformLocation(cabinProg, 'uCabinReady'),
+    uNoFaceReady: gl.getUniformLocation(cabinProg, 'uNoFaceReady'),
+    uCloudsReady: gl.getUniformLocation(cabinProg, 'uCloudsReady'),
+    uBobY: gl.getUniformLocation(cabinProg, 'uBobY'),
+    uSwayX: gl.getUniformLocation(cabinProg, 'uSwayX'),
+    uSeed: gl.getUniformLocation(cabinProg, 'uSeed'),
+    uNoFaceRect: gl.getUniformLocation(cabinProg, 'uNoFaceRect')
+  };
+  cabinCtrl = createCabinLivingEngine(
+    gl,
+    () => {
+      cabinOverlayDirty = true;
+      if (paused && P.viewMode >= 0.5) renderFrame(simTime);
+    },
+    trainCtrl // Shares seamless Ghibli cloud panorama texture (zero duplicate VRAM!)
+  );
+  cabinCtrl.resize(W, H);
+  cabinCtrl.step(0, { W, H, flow: P.flow, shake: P.shake });
+  cabinOverlayDirty = true;
+}
 
 const field = new AdaptiveField(FIELD_STEP);
 const noiseTex = createSeamlessNoiseTexture(gl, 256);
@@ -215,6 +284,11 @@ function allocResources() {
   curMix = 1.0;
 
   trainCtrl.step(0, { W, H, flow: P.flow, trainMode: P.trainMode, showPassing: P.showPassing });
+  if (cabinCtrl) {
+    cabinCtrl.resize(W, H);
+    cabinCtrl.step(0, { W, H, flow: P.flow, shake: P.shake });
+    cabinOverlayDirty = true;
+  }
 }
 
 function commitField(animate = true) {
@@ -244,9 +318,84 @@ function commitField(animate = true) {
   if (paused) renderFrame(simTime);
 }
 
-function renderFrame(t) {
-  gl.disable(gl.BLEND);
+function renderCabinFrame(t, nowMs) {
+  ensureCabinInitialized();
+  if (cabinOverlayDirty || perf.shouldUploadOverlay(nowMs, 33)) {
+    cabinCtrl.renderAndUpload({
+      W,
+      H,
+      showStraps: P.showStraps,
+      showDust: P.showDust,
+      sunset: sunsetMix,
+      night: nightMix
+    });
+    cabinOverlayDirty = false;
+  }
 
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, glCanvas.width, glCanvas.height);
+  gl.useProgram(cabinProg);
+
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, texA);
+  gl.uniform1i(UC.uFA, 0);
+
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, texB);
+  gl.uniform1i(UC.uFB, 1);
+
+  gl.activeTexture(gl.TEXTURE2);
+  gl.bindTexture(gl.TEXTURE_2D, noiseTex);
+  gl.uniform1i(UC.uNoise, 2);
+
+  gl.activeTexture(gl.TEXTURE3);
+  gl.bindTexture(gl.TEXTURE_2D, cabinCtrl.cabinTexture);
+  gl.uniform1i(UC.uCabinTex, 3);
+
+  gl.activeTexture(gl.TEXTURE4);
+  gl.bindTexture(gl.TEXTURE_2D, cabinCtrl.noFaceTexture);
+  gl.uniform1i(UC.uNoFaceTex, 4);
+
+  gl.activeTexture(gl.TEXTURE5);
+  gl.bindTexture(gl.TEXTURE_2D, cabinCtrl.liveTexture);
+  gl.uniform1i(UC.uLiveTex, 5);
+
+  gl.activeTexture(gl.TEXTURE6);
+  gl.bindTexture(gl.TEXTURE_2D, cabinCtrl.cloudsTexture);
+  gl.uniform1i(UC.uCloudsTex, 6);
+
+  gl.activeTexture(gl.TEXTURE7);
+  gl.bindTexture(gl.TEXTURE_2D, moonSurface.texture);
+  gl.uniform1i(UC.uMoonTex, 7);
+
+  gl.uniform2f(UC.uRes, glCanvas.width, glCanvas.height);
+  gl.uniform2f(UC.uGrid, field.gw, field.gh);
+  gl.uniform1f(UC.uStep, field.step);
+  gl.uniform1f(UC.uDpr, dpr);
+  gl.uniform1f(UC.uMix, curMix);
+  gl.uniform1f(UC.uTime, t);
+  gl.uniform1f(UC.uWindTime, flowTime);
+  gl.uniform1f(UC.uWorldScroll, cabinCtrl.worldScroll);
+  gl.uniform1f(UC.uAdaptive, P.adaptive);
+  gl.uniform1f(UC.uSunset, sunsetMix);
+  gl.uniform1f(UC.uNight, nightMix);
+  gl.uniform1f(UC.uMoonPhase, moonPhase);
+  gl.uniform1f(UC.uShowNoFace, P.showNoFace);
+  gl.uniform1f(UC.uShowPoles, P.showPoles);
+  gl.uniform1f(UC.uCabinReady, cabinCtrl.cabinReady);
+  gl.uniform1f(UC.uNoFaceReady, cabinCtrl.noFaceReady);
+  gl.uniform1f(UC.uCloudsReady, cabinCtrl.cloudsReady);
+  gl.uniform1f(UC.uBobY, cabinCtrl.bobY);
+  gl.uniform1f(UC.uSwayX, cabinCtrl.swayX);
+  gl.uniform1f(UC.uSeed, SCENE_SEED);
+
+  const nf = cabinCtrl.noFaceRect;
+  gl.uniform4f(UC.uNoFaceRect, nf[0], nf[1], nf[2], nf[3]);
+
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+
+function renderExteriorFrame(t) {
   // Pass 1 (Night only): Quarter-res 3D Volumetric Aurora FBO (~40x fewer GPU ALU ops than full-res raymarching!)
   if (nightMix > 0.015 && auroraFbo && auroraTex) {
     gl.bindFramebuffer(gl.FRAMEBUFFER, auroraFbo);
@@ -355,6 +504,15 @@ function renderFrame(t) {
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 }
 
+function renderFrame(t, nowMs = performance.now()) {
+  gl.disable(gl.BLEND);
+  if (P.viewMode >= 0.5) {
+    renderCabinFrame(t, nowMs);
+  } else {
+    renderExteriorFrame(t);
+  }
+}
+
 function tick(now) {
   requestAnimationFrame(tick);
 
@@ -398,10 +556,15 @@ function tick(now) {
       const rawT = Math.min(1, (now - mixStart) / mixDuration);
       curMix = 1 - Math.pow(1 - rawT, 3);
     }
-    trainCtrl.step(dt, { W, H, flow: P.flow, trainMode: P.trainMode, showPassing: P.showPassing });
+    if (P.viewMode >= 0.5) {
+      ensureCabinInitialized();
+      cabinCtrl.step(dt, { W, H, flow: P.flow, shake: P.shake });
+    } else {
+      trainCtrl.step(dt, { W, H, flow: P.flow, trainMode: P.trainMode, showPassing: P.showPassing });
+    }
   }
 
-  renderFrame(simTime);
+  renderFrame(simTime, now);
   needsInitialSettle = false;
 }
 
@@ -417,11 +580,19 @@ const bridge = createHostBridge({
       if (k === 'trainMode' && Math.round(num) === 2) {
         trainCtrl.resetToStation();
       }
+      if (k === 'viewMode' && num >= 0.5) {
+        ensureCabinInitialized();
+        cabinOverlayDirty = true;
+      }
+      if (k === 'showStraps' || k === 'showDust') {
+        cabinOverlayDirty = true;
+      }
       if (k === 'timeMode' && (!moodInitialized || paused)) {
         const tgt = targetMoodFromClock();
         sunsetMix = tgt.sunset;
         nightMix = tgt.night;
         moodInitialized = true;
+        cabinOverlayDirty = true;
       }
     }
     if (fieldDirty) commitField(false);
@@ -429,6 +600,7 @@ const bridge = createHostBridge({
   },
   onReset() {
     Object.assign(P, DEFAULTS);
+    cabinOverlayDirty = true;
     commitField(true);
   },
   onIcons(mapped) {

@@ -12,13 +12,26 @@ const APPEARANCE_KEY = 'scream.ui.appearance';
 const MOON_THEMES = new Set(['seatrain', 'begonia', 'skyship', 'castle', 'meadow']);
 const darkMedia = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
 
-// Dependent controls disabled automatically when their parent toggle is OFF
+// Dependent controls: auto-dimmed when parent toggle is OFF, or hidden cleanly per camera viewMode
 const PARAM_DEPS = {
   sigma: { parent: 'adaptive', min: 0.5 },
   warp: { parent: 'adaptive', min: 0.5 },
   margin: { parent: 'adaptive', min: 0.5 },
   radius: { parent: 'adaptive', min: 0.5 },
-  castleSpeed: { parent: 'showCastle', min: 0.5 }
+  castleSpeed: { parent: 'showCastle', min: 0.5 },
+  // Sea Railway exterior-only controls (hidden cleanly in Inside Cabin view)
+  clouds: { parent: 'viewMode', equals: 0, hide: true },
+  ripple: { parent: 'viewMode', equals: 0, hide: true },
+  trainMode: { parent: 'viewMode', equals: 0, hide: true },
+  showStation: { parent: 'viewMode', equals: 0, hide: true },
+  showIsland: { parent: 'viewMode', equals: 0, hide: true },
+  showPassing: { parent: 'viewMode', equals: 0, hide: true },
+  // Sea Railway cabin-only controls (hidden cleanly in Exterior view)
+  shake: { parent: 'viewMode', equals: 1, hide: true },
+  showNoFace: { parent: 'viewMode', equals: 1, hide: true },
+  showStraps: { parent: 'viewMode', equals: 1, hide: true },
+  showPoles: { parent: 'viewMode', equals: 1, hide: true },
+  showDust: { parent: 'viewMode', equals: 1, hide: true }
 };
 
 const state = {
@@ -194,7 +207,7 @@ function ensureThemeParams(themeObj) {
 }
 
 function isBinaryToggleParam(param) {
-  return Array.isArray(param?.options?.vi) && param.options.vi.length === 2;
+  return param?.control !== 'segmented' && Array.isArray(param?.options?.vi) && param.options.vi.length === 2;
 }
 
 function formatValue(param, val) {
@@ -293,12 +306,31 @@ function refreshDependentStates() {
     const row = el.paramsContainer.querySelector(`.param-row[data-param-key="${depKey}"]`);
     if (!row) continue;
     const parentVal = bag[rule.parent];
-    const disabled = parentVal !== undefined && Number(parentVal) < rule.min;
-    row.classList.toggle('is-disabled', disabled);
-    row.querySelectorAll('input, button').forEach((ctrl) => {
-      ctrl.disabled = disabled;
-    });
+    let disabled = false;
+    if (parentVal !== undefined) {
+      if (rule.equals !== undefined) {
+        disabled = Math.round(Number(parentVal)) !== rule.equals;
+      } else if (rule.min !== undefined) {
+        disabled = Number(parentVal) < rule.min;
+      }
+    }
+    if (rule.hide) {
+      row.hidden = disabled;
+    } else {
+      row.hidden = false;
+      row.classList.toggle('is-disabled', disabled);
+      row.querySelectorAll('input, button').forEach((ctrl) => {
+        ctrl.disabled = disabled;
+      });
+    }
   }
+  // Hide any parameter group card whose rows are all currently hidden (e.g. Exterior vs Cabin groups)
+  el.paramsContainer.querySelectorAll('.param-group').forEach((grp) => {
+    const rows = grp.querySelectorAll('.param-row');
+    if (rows.length === 0) return;
+    const anyVisible = Array.from(rows).some((r) => !r.hidden);
+    grp.hidden = !anyVisible;
+  });
 }
 
 function switchTab(tabName) {

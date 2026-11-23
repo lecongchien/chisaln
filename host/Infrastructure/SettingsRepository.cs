@@ -172,6 +172,13 @@ namespace Scream.Infrastructure
                 }
             }
 
+            // Migrate legacy standalone "cabin" theme cleanly into unified "seatrain" (viewMode = 1)
+            if (string.Equals(Current.Theme, "cabin", StringComparison.OrdinalIgnoreCase))
+            {
+                Current.Theme = "seatrain";
+                SetParam("seatrain", "viewMode", 1);
+            }
+
             if (GetTheme(Current.Theme) == null && _themes.Count > 0)
             {
                 Current.Theme = _themes[0].Id;

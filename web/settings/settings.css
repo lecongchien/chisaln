@@ -737,6 +737,10 @@ html, body {
   display: flex;
   flex-direction: column;
 }
+.param-group[hidden],
+.param-row[hidden] {
+  display: none !important;
+}
 
 .group-title {
   font-size: 11px;

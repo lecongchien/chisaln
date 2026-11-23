@@ -514,23 +514,44 @@
         "en": "Sea Railway"
       },
       "desc": {
-        "vi": "Đoàn tàu 5 toa cổ điển lướt êm từ xa trên mặt biển gương phản chiếu ráng mây hoàng hôn, hào quang sao đêm và ga gỗ hàng rào trắng phong cách Ghibli.",
-        "en": "A distant vintage five-car sea train gliding across a mirror-flat ocean reflecting towering sunset clouds, starlight auras, and a wooden station."
+        "vi": "Đoàn tàu 5 toa cổ điển lướt êm trên mặt biển gương — chuyển tức thì giữa góc nhìn Ngoài tàu và góc nhìn Trong toa cùng Chihiro, Vô Diện và hành khách bóng mờ.",
+        "en": "Vintage five-car sea train across a mirror ocean — switch instantly between Exterior and Inside Cabin view with Chihiro, No-Face, and shadow passengers."
       },
       "accent": "#C96A53",
       "groups": [
         {
-          "name": { "vi": "Bầu trời & Biển gương", "en": "Sky & Mirror Sea" },
+          "name": { "vi": "Góc nhìn & Bầu trời", "en": "View & Atmosphere" },
           "params": [
+            {
+              "key": "viewMode",
+              "control": "segmented",
+              "label": { "vi": "Góc nhìn chuyến tàu", "en": "Camera View" },
+              "hint": { "vi": "Ngắm đoàn tàu 5 toa lướt trên biển gương từ xa hoặc bước vào bên trong hành lang toa tàu cùng Chihiro & Vô Diện", "en": "Watch the five-car train glide from afar or step inside the central-aisle cabin with Chihiro & No-Face" },
+              "options": {
+                "vi": ["Ngoài tàu", "Trong toa"],
+                "en": ["Exterior", "Inside Cabin"]
+              },
+              "default": 0
+            },
             {
               "key": "timeMode",
               "label": { "vi": "Thời gian trong ngày", "en": "Time of Day" },
-              "hint": { "vi": "Nắng hạ trong veo, hoàng hôn chiều tà, đêm ngân hà đèn tàu hoặc tự động theo giờ", "en": "Switch between summer sky, golden twilight sunset, starlit night, or auto local time" },
+              "hint": { "vi": "Nắng hạ trong veo, hoàng hôn chiều tà, đêm ngân hà đèn ấm & Mặt Trăng ngày sinh hoặc tự động theo giờ", "en": "Switch between summer sky, golden twilight sunset, starlit lamp-lit night, or auto local time" },
               "options": {
                 "vi": ["Ban ngày", "Hoàng hôn", "Ban đêm", "Tự động"],
                 "en": ["Day", "Sunset", "Night", "Auto"]
               },
               "default": 1
+            },
+            {
+              "key": "flow",
+              "label": { "vi": "Tốc độ hành trình", "en": "Journey Speed" },
+              "hint": { "vi": "Tốc độ lướt của đoàn tàu, mây trôi và cảnh biển bên ngoài khung cửa", "en": "Speed of the sea train, passing poles, clouds, and coastal landmarks" },
+              "min": 0,
+              "max": 2.4,
+              "step": 0.05,
+              "default": 1.0,
+              "format": "times"
             },
             {
               "key": "clouds",
@@ -551,16 +572,6 @@
               "step": 0.05,
               "default": 0.30,
               "format": "percent"
-            },
-            {
-              "key": "flow",
-              "label": { "vi": "Tốc độ hành trình", "en": "Journey Speed" },
-              "hint": { "vi": "Tốc độ lướt của đoàn tàu, mây trôi và các cảnh vật ngang chân trời", "en": "Speed of the tracking camera, scrolling landmarks, and drifting clouds" },
-              "min": 0,
-              "max": 2.4,
-              "step": 0.05,
-              "default": 1.0,
-              "format": "times"
             }
           ]
         },
@@ -610,12 +621,67 @@
           ]
         },
         {
+          "name": { "vi": "Chi tiết trong khoang tàu", "en": "Inside Cabin Details" },
+          "params": [
+            {
+              "key": "shake",
+              "label": { "vi": "Độ rung nhịp ray", "en": "Rail-Joint Sway" },
+              "hint": { "vi": "Nhịp nảy êm ái của khoang tàu và biên độ lắc lư của hai hàng tay nắm treo", "en": "Gentle cabin suspension bounce and pendulum swing amplitude of hand straps" },
+              "min": 0,
+              "max": 1.0,
+              "step": 0.05,
+              "default": 0.65,
+              "format": "percent"
+            },
+            {
+              "key": "showNoFace",
+              "label": { "vi": "Chihiro & Vô Diện", "en": "Chihiro & No-Face" },
+              "hint": { "vi": "Chihiro đứng ngước nhìn Vô Diện cao lớn phía bên phải hành lang toa tàu", "en": "Chihiro looking up at towering No-Face in the right foreground aisle" },
+              "options": {
+                "vi": ["Ẩn", "Hiện"],
+                "en": ["Hide", "Show"]
+              },
+              "default": 1
+            },
+            {
+              "key": "showStraps",
+              "label": { "vi": "Hai hàng tay nắm treo", "en": "Swinging Hand Straps" },
+              "hint": { "vi": "Hai dãy tay nắm tròn cổ điển lắc lư theo nhịp đường ray cùng bóng đổ trên sàn giữa", "en": "Twin perspective rows of vintage hand rings swinging with live floor shadows" },
+              "options": {
+                "vi": ["Ẩn", "Hiện"],
+                "en": ["Hide", "Show"]
+              },
+              "default": 1
+            },
+            {
+              "key": "showPoles",
+              "label": { "vi": "Cột điện lướt ngoài kính", "en": "Passing Utility Poles" },
+              "hint": { "vi": "Hàng cột điện gỗ & dây võng lướt theo phối cảnh hai bên khung cửa kèm nhịp nắng", "en": "Perspective wooden utility poles & wires rushing past both sides of the car" },
+              "options": {
+                "vi": ["Ẩn", "Hiện"],
+                "en": ["Hide", "Show"]
+              },
+              "default": 1
+            },
+            {
+              "key": "showDust",
+              "label": { "vi": "Tia nắng & Bụi sáng", "en": "Sunbeams & Dust Motes" },
+              "hint": { "vi": "Vệt nắng xiên qua hàng cửa sổ trái xuống lối đi cùng hạt bụi sáng lơ lửng", "en": "Diagonal sunbeams pouring across the center aisle with drifting golden dust" },
+              "options": {
+                "vi": ["Ẩn", "Hiện"],
+                "en": ["Hide", "Show"]
+              },
+              "default": 1
+            }
+          ]
+        },
+        {
           "name": { "vi": "Thích ứng biểu tượng", "en": "Adaptive Icons" },
           "params": [
             {
               "key": "adaptive",
-              "label": { "vi": "Cực quang & Sóng gương", "en": "Aurora Curtains & Ripples" },
-              "hint": { "vi": "Ban đêm dải cực quang xanh lục bốc rèm sáng dọc theo vùng icon và phản chiếu xuống biển, ban ngày/hoàng hôn tỏa sương ánh sáng êm dịu", "en": "Volumetric green Aurora Borealis curtains rising along sky icons at night (mirrored in the sea); concentric ripples on water" },
+              "label": { "vi": "Quầng sáng & Cực quang", "en": "Adaptive Icon Effect" },
+              "hint": { "vi": "Ngoài tàu tỏa cực quang & sóng gương theo icon; trong toa tạo lớp sương dịu giữ chữ icon rõ nét", "en": "Aurora & mirror ripples outside; delicate frosted readability glow inside the cabin" },
               "options": {
                 "vi": ["Tắt", "Bật"],
                 "en": ["Off", "On"]
@@ -625,7 +691,7 @@
             {
               "key": "sigma",
               "label": { "vi": "Vùng đệm quanh icon", "en": "Icon Cushion Size" },
-              "hint": { "vi": "Độ nở rộng của đệm mây trời và vùng sóng quanh biểu tượng", "en": "Extent of cloud cushions and water ripples around icons" },
+              "hint": { "vi": "Độ nở rộng của vùng thích ứng phía sau mỗi biểu tượng", "en": "Extent of the adaptive region around desktop icons" },
               "min": 42,
               "max": 160,
               "step": 1,
@@ -635,7 +701,7 @@
             {
               "key": "warp",
               "label": { "vi": "Độ uốn tự nhiên", "en": "Edge Organic Warp" },
-              "hint": { "vi": "Độ mềm tự nhiên của viền mây quanh icon", "en": "Natural contour billow around icon clouds" },
+              "hint": { "vi": "Độ mềm tự nhiên của viền mây quanh icon", "en": "Natural contour billow around icon regions" },
               "min": 0,
               "max": 72,
               "step": 1,
