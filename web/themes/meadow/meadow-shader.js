@@ -25,6 +25,7 @@ uniform highp sampler2D uCirc;
 uniform sampler2D uCat;
 uniform sampler2D uActor;
 uniform sampler2D uActorShadow;
+uniform sampler2D uMoonTex;
 
 uniform vec2 uRes;
 uniform vec2 uGrid;
@@ -39,6 +40,7 @@ uniform float uEdge;
 uniform float uSeed;
 uniform float uSunset;      // 0.0 -> 1.0 = golden-hour sunset ("ánh chiều tà")
 uniform float uNight;       // 0.0 = sunlit day, 1.0 = moonlit night meadow
+uniform float uMoonPhase;   // 0=New, 0.25=First Qtr, 0.5=Full (100%), 0.75=Last Qtr
 uniform vec4 uPond;         // xy = pond center CSS px, zw = radii (rx, ry); z <= 0 hides pond
 uniform vec4 uWindA[4];     // (ox, oy, angle, headX)
 uniform vec4 uWindB[4];     // (length, amp, freq, phase)
@@ -529,30 +531,41 @@ vec3 shadeMeadowPond(vec2 p, vec3 grassCol, float dPond, float sunset, float nig
       water = mix(water, vec3(0.90, 0.95, 1.0), starDot * 0.85);
     }
 
-    // 2. Crisp shimmering crescent moon reflected inside the pond!
+    // 2. Crisp shimmering real Lunar Surface & 3D phase reflected inside the pond!
     vec2 mPos = uPond.xy + vec2(-uPond.z * 0.14, -uPond.w * 0.08);
     vec2 mp = (p - mPos) + vec2(ripX * 1.45, fineRip * 0.45);
     float mRad = clamp(pondMinR * 0.36, 13.0, 26.0);
     float dOuter = length(mp) - mRad;
-    // Shadow-bite offset matching LIGHT = (-0.6, -0.8) so bright crescent faces upper-left!
-    float dCut = length(mp - vec2(mRad * 0.44, mRad * 0.34)) - mRad * 0.86;
-    float crescent = ss(1.4, -1.0, dOuter) * ss(-1.0, 1.4, dCut);
+    float disc = ss(1.4, -1.0, dOuter);
 
-    // Subtle watercolor lunar surface shading + soft watery bloom around crescent
-    float moonTex = 0.92 + 0.08 * N(mp * 2.2, 42.0).r;
-    vec3 moonCore = mix(vec3(0.86, 0.93, 1.0), vec3(1.00, 0.97, 0.86), 0.72) * moonTex;
-    float moonHalo = exp(-max(dOuter, 0.0) / (mRad * 1.25)) * 0.42;
+    float moonTheta = uMoonPhase * 6.2831853;
+    float moonIllum = 0.5 - 0.5 * cos(moonTheta);
+    float phaseGlow = mix(0.20, 1.0, pow(max(0.0001, moonIllum), 0.65));
+
+    vec2 mLocal = mp / max(1.0, mRad);
+    float rN = clamp(length(mLocal), 0.0, 1.0);
+    float z3 = sqrt(max(0.0, 1.0 - rN * rN));
+    vec2 rotM = vec2(mLocal.x * 0.97 + mLocal.y * 0.24, -mLocal.x * 0.24 + mLocal.y * 0.97);
+    float lx = sin(moonTheta);
+    float lz = -cos(moonTheta);
+    vec2 mUV = clamp(rotM * 0.480 + 0.5, 0.005, 0.995);
+    vec4 mTex = texture(uMoonTex, mUV);
+    float litPhase = ss(-0.05, 0.16, rotM.x * lx + z3 * lz + (mTex.a - 0.5) * 0.045);
+
+    vec3 moonLitCol = mTex.rgb * vec3(1.02, 1.00, 0.94);
+    vec3 moonCore = mix(water * 0.90 + mTex.rgb * vec3(0.06, 0.09, 0.14), moonLitCol, litPhase);
+    float moonHalo = exp(-max(dOuter, 0.0) / (mRad * 1.25)) * 0.42 * phaseGlow;
     water += vec3(0.42, 0.66, 0.88) * moonHalo * depthK * clearSky * night;
-    water = mix(water, moonCore, crescent * depthK * clearSky * night * 0.94);
+    water = mix(water, moonCore, disc * depthK * clearSky * night * 0.94);
 
-    // 3. Shimmering broken silver moonlight trail ("vệt trăng loang") dancing on ripples below-right of crescent
+    // 3. Shimmering broken silver moonlight trail ("vệt trăng loang") dancing on ripples below-right of moon
     vec2 trailRel = p - mPos;
     float tAlong = dot(trailRel, normalize(vec2(0.55, 0.84)));
     float tAcross = dot(trailRel, normalize(vec2(-0.84, 0.55)));
     float tEnv = ss(mRad * 0.2, mRad * 1.1, tAlong) * (1.0 - ss(mRad * 1.2, mRad * 3.1, tAlong))
                * exp(-pow(tAcross / (mRad * 0.62 + tAlong * 0.12), 2.0));
     float ripBars = ss(0.35, 0.88, sin(rel.y * 0.72 - uTime * 2.3 + ripNoise * 4.5));
-    water = mix(water, vec3(0.95, 0.97, 0.92), tEnv * ripBars * depthK * clearSky * night * 0.56);
+    water = mix(water, vec3(0.95, 0.97, 0.92), tEnv * ripBars * depthK * clearSky * night * 0.56 * phaseGlow);
   }
 
   // Concentric ripple ring highlight

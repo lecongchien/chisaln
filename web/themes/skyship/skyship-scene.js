@@ -11,9 +11,11 @@ import {
   uploadFieldTexture,
   createSeamlessNoiseTexture,
   sampleSeamlessNoise,
-  computeRenderDpr
+  computeRenderDpr,
+  createPerfGovernor
 } from '../../core/field-engine.js';
 import { createHostBridge } from '../../core/host-bridge.js';
+import { resolveMoonConfig, createMoonSurfaceLoader } from '../../core/moon-phase.js';
 import { SKYSHIP_FS } from './skyship-shader.js';
 import { createSkyshipFleet } from './skyship-fleet.js';
 
@@ -62,6 +64,7 @@ const U = {
   uSkiffSailsTex: gl.getUniformLocation(prog, 'uSkiffSailsTex'),
   uSkiffSailMap: gl.getUniformLocation(prog, 'uSkiffSailMap'),
   uFgTex: gl.getUniformLocation(prog, 'uFgTex'),
+  uMoonTex: gl.getUniformLocation(prog, 'uMoonTex'),
   uRes: gl.getUniformLocation(prog, 'uRes'),
   uGrid: gl.getUniformLocation(prog, 'uGrid'),
   uStep: gl.getUniformLocation(prog, 'uStep'),
@@ -80,6 +83,7 @@ const U = {
   uSkiffReady: gl.getUniformLocation(prog, 'uSkiffReady'),
   uShowEscort: gl.getUniformLocation(prog, 'uShowEscort'),
   uShowMeteors: gl.getUniformLocation(prog, 'uShowMeteors'),
+  uMoonPhase: gl.getUniformLocation(prog, 'uMoonPhase'),
   uSeed: gl.getUniformLocation(prog, 'uSeed'),
   uGalleonRect: gl.getUniformLocation(prog, 'uGalleonRect'),
   uGalleonTilt: gl.getUniformLocation(prog, 'uGalleonTilt'),
@@ -100,9 +104,14 @@ const SCENE_SEED = 27.9;
 
 let simTime = 0, flowTime = 0, lastRaf = 0, lastDraw = 0;
 let sunsetMix = 1.0, nightMix = 0.0, moodInitialized = false;
+let moonCfg = { mode: 'full', date: '2000-08-15' };
+let moonPhase = 0.5;
 
 const fleet = createSkyshipFleet(gl, () => {
   if (paused) renderFrame(simTime);
+});
+const moonSurface = createMoonSurfaceLoader(gl, () => {
+  if (paused) renderFrame(simTime, false);
 });
 
 function sampleSdfB(px, py) {
@@ -152,13 +161,22 @@ function computeMoonOcclusion() {
   return { occ, vis: 1 - occ * 0.68 };
 }
 
+const perf = createPerfGovernor({
+  isPreview,
+  onQualityChange() {
+    dpr = computeRenderDpr(W, H, isPreview, perf.qualityScale);
+    glCanvas.width = Math.max(1, Math.round(W * dpr));
+    glCanvas.height = Math.max(1, Math.round(H * dpr));
+  }
+});
+
 function allocResources() {
   W = Math.max(1, window.innerWidth);
   H = Math.max(1, window.innerHeight);
-  dpr = computeRenderDpr(W, H, isPreview);
+  dpr = computeRenderDpr(W, H, isPreview, perf.qualityScale);
 
-  glCanvas.width = Math.round(W * dpr);
-  glCanvas.height = Math.round(H * dpr);
+  glCanvas.width = Math.max(1, Math.round(W * dpr));
+  glCanvas.height = Math.max(1, Math.round(H * dpr));
 
   field.resize(W, H);
   if (texA) gl.deleteTexture(texA);
@@ -203,13 +221,15 @@ function commitField(animate = true) {
   if (paused) renderFrame(simTime);
 }
 
-function renderFrame(t) {
-  fleet.renderAndUpload(t, {
-    W, H,
-    flow: P.flow,
-    showEscort: P.showEscort,
-    showGlider: P.showGlider
-  });
+function renderFrame(t, upload2d = true) {
+  if (upload2d) {
+    fleet.renderAndUpload(t, {
+      W, H,
+      flow: P.flow,
+      showEscort: P.showEscort,
+      showGlider: P.showGlider
+    });
+  }
 
   gl.viewport(0, 0, glCanvas.width, glCanvas.height);
   gl.disable(gl.BLEND);
@@ -255,6 +275,10 @@ function renderFrame(t) {
   gl.bindTexture(gl.TEXTURE_2D, fleet.skiffSailMapTexture);
   gl.uniform1i(U.uSkiffSailMap, 9);
 
+  gl.activeTexture(gl.TEXTURE10);
+  gl.bindTexture(gl.TEXTURE_2D, moonSurface.texture);
+  gl.uniform1i(U.uMoonTex, 10);
+
   const moon = computeMoonOcclusion();
   gl.uniform2f(U.uRes, glCanvas.width, glCanvas.height);
   gl.uniform2f(U.uGrid, field.gw, field.gh);
@@ -274,6 +298,7 @@ function renderFrame(t) {
   gl.uniform1f(U.uSkiffReady, fleet.skiffReady);
   gl.uniform1f(U.uShowEscort, P.showEscort);
   gl.uniform1f(U.uShowMeteors, P.showMeteors);
+  gl.uniform1f(U.uMoonPhase, moonPhase);
   gl.uniform1f(U.uSeed, SCENE_SEED);
 
   const gr = fleet.galleonRect;
@@ -292,6 +317,12 @@ function renderFrame(t) {
 function tick(now) {
   requestAnimationFrame(tick);
 
+  if (perf.isHidden) {
+    lastRaf = 0;
+    perf.resetTiming();
+    return;
+  }
+
   const tgt = targetMoodFromClock();
   if (!moodInitialized) {
     sunsetMix = tgt.sunset;
@@ -301,16 +332,17 @@ function tick(now) {
   const moodChanging = Math.abs(tgt.sunset - sunsetMix) > 0.002 || Math.abs(tgt.night - nightMix) > 0.002;
   if (paused && !needsInitialSettle && !moodChanging) {
     lastRaf = 0;
+    perf.resetTiming();
     return;
   }
 
-  // Smooth vsync-aligned 60 FPS on desktop; lighter 35 FPS in preview iframe
-  const targetInterval = isPreview ? 28 : 12;
-  if (!needsInitialSettle && lastDraw && now - lastDraw < targetInterval) return;
+  if (!needsInitialSettle && lastDraw && now - lastDraw < perf.targetInterval) return;
 
-  const dt = lastRaf ? Math.min(0.05, (now - lastRaf) / 1000) : 0.0167;
+  const elapsedMs = lastRaf ? (now - lastRaf) : 16.7;
+  const dt = lastRaf ? Math.min(0.05, elapsedMs / 1000) : 0.0167;
   lastRaf = now;
   lastDraw = now;
+  perf.reportFrame(elapsedMs, now);
 
   const k = Math.min(1, dt * 1.45);
   sunsetMix += (tgt.sunset - sunsetMix) * k;
@@ -334,7 +366,7 @@ function tick(now) {
     });
   }
 
-  renderFrame(simTime);
+  renderFrame(simTime, perf.shouldUpload2d(now, needsInitialSettle));
   needsInitialSettle = false;
 }
 
@@ -372,6 +404,11 @@ const bridge = createHostBridge({
       curMix = 1.0;
       needsInitialSettle = true;
     }
+  },
+  onMoon(cfg) {
+    moonCfg = cfg;
+    moonPhase = resolveMoonConfig(moonCfg).phase;
+    if (paused) renderFrame(simTime, false);
   },
   getCanvases: () => ({ glCanvas, overlayCanvas: null }),
   renderNow: () => renderFrame(simTime)

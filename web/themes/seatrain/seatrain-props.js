@@ -70,10 +70,11 @@ export function createSeaTrainController(gl, onReady) {
   });
 
   // Meditative Spirited Away tracking-camera world cycle (in screen-widths):
-  // Station glides past at 1.10, Passing Silhouette Train briefly crosses at 1.55, Lonely Island glides past at 3.25!
-  const WORLD_LOOP  = 4.5;
-  const STATION_POS = 1.10;
-  const ISLAND_POS  = 3.25;
+  // Station glides past at STATION_WORLD, Passing Silhouette Train briefly crosses nearby, Lonely Island at ISLAND_WORLD!
+  const WORLD_LOOP    = 4.5;
+  const STATION_POS   = 1.10;
+  const STATION_WORLD = STATION_POS - 0.50; // World origin where wrapScreenX(STATION_WORLD) === 0 (left edge)
+  const ISLAND_POS    = 3.25;
 
   const state = {
     worldScroll: 0.72,    // Starts with Sixth Station entering serenely on the left horizon!
@@ -82,6 +83,7 @@ export function createSeaTrainController(gl, onReady) {
     bobPhase: 0.0,
     stopState: 'cruising',
     dwellTimer: 0.0,
+    dockFrac: 0.352,      // Exact normalized screen-X where station aligns directly behind Car 1-2 boarding doors
     trainRect: new Float32Array(4),
     stationRect: new Float32Array(4),
     islandRect: new Float32Array(4),
@@ -89,7 +91,8 @@ export function createSeaTrainController(gl, onReady) {
   };
 
   function resetToStation() {
-    state.worldScroll = STATION_POS - 0.50;
+    // Place station center directly at state.dockFrac * W (right behind Car 1-2, zero water gap!)
+    state.worldScroll = STATION_WORLD + state.dockFrac;
     state.speed = 0.0;
     state.wake = 0.0;
     state.stopState = 'docked';
@@ -109,16 +112,23 @@ export function createSeaTrainController(gl, onReady) {
     const islandH = trainH * 0.84;
     const islandW = islandH * Math.max(1.0, islandAspect);
 
+    // Exact docking target: Sixth Station waiting shelter & doorway sit directly behind Car 1-2 boarding doors
+    // with the white picket fence extending softly ahead of Car 1's nose and signal pole rising behind Car 2!
+    const baseTx = W * 0.50 - trainW * 0.5;
+    const dockScreenFrac = (baseTx + trainW * 0.10) / Math.max(1, W);
+    state.dockFrac = dockScreenFrac;
+    const dockTargetMod = ((STATION_WORLD + dockScreenFrac) % WORLD_LOOP + WORLD_LOOP) % WORLD_LOOP;
+
     const pace = Math.max(0.0, flow);
     const cruiseSpeed = 0.155 * pace;
 
     if (mode === 2 || pace <= 0.01) {
-      // Mode 2: Docked Still — ease smoothly until station centers behind train, then rest calmly
-      const targetScroll = STATION_POS - 0.50;
-      let diff = targetScroll - (state.worldScroll % WORLD_LOOP);
+      // Mode 2: Docked Still — ease smoothly until station docks directly behind Car 1-2, then rest calmly
+      const curMod = ((state.worldScroll % WORLD_LOOP) + WORLD_LOOP) % WORLD_LOOP;
+      let diff = dockTargetMod - curMod;
       if (diff < -WORLD_LOOP * 0.5) diff += WORLD_LOOP;
       if (diff >  WORLD_LOOP * 0.5) diff -= WORLD_LOOP;
-      state.speed += (Math.max(-0.18, Math.min(0.18, diff * 0.85)) - state.speed) * Math.min(1, dt * 3.0);
+      state.speed += (Math.max(-0.18, Math.min(0.18, diff * 0.95)) - state.speed) * Math.min(1, dt * 3.2);
       if (Math.abs(diff) < 0.002 && Math.abs(state.speed) < 0.004) {
         state.worldScroll += diff;
         state.speed = 0.0;
@@ -127,10 +137,9 @@ export function createSeaTrainController(gl, onReady) {
       }
       state.stopState = 'docked';
     } else if (mode === 1) {
-      // Mode 1: Station Stop Cycle — tracks smoothly, slows gently to dock at Sixth Station, then departs!
-      const targetMod = (STATION_POS - 0.50 + WORLD_LOOP) % WORLD_LOOP;
+      // Mode 1: Station Stop Cycle — tracks smoothly, slows gently to dock directly at Sixth Station, then departs!
       const curMod = ((state.worldScroll % WORLD_LOOP) + WORLD_LOOP) % WORLD_LOOP;
-      let distToDock = targetMod - curMod;
+      let distToDock = dockTargetMod - curMod;
       if (distToDock < -WORLD_LOOP * 0.5) distToDock += WORLD_LOOP;
       if (distToDock >  WORLD_LOOP * 0.5) distToDock -= WORLD_LOOP;
 
@@ -171,7 +180,7 @@ export function createSeaTrainController(gl, onReady) {
     const railBob  = Math.sin(state.bobPhase) * 0.28 * speedNorm;
 
     // 1. Hero 5-Car Train centered on screen; bogie bottom sits cleanly submerged at the mirror waterline!
-    const tx = W * 0.50 - trainW * 0.5 + camSwayX;
+    const tx = baseTx + camSwayX;
     const ty = horizonY - trainH * 0.86 + railBob;
     state.trainRect[0] = tx;
     state.trainRect[1] = ty;
@@ -186,7 +195,7 @@ export function createSeaTrainController(gl, onReady) {
     };
 
     // 2. Hand-Painted Flooded Sixth Station scrolling smoothly Left -> Right behind the train
-    const stCenterX = wrapScreenX(STATION_POS - 0.50);
+    const stCenterX = wrapScreenX(STATION_WORLD);
     state.stationRect[0] = stCenterX - stationW * 0.5;
     state.stationRect[1] = horizonY - stationH + stationH * 0.032;
     state.stationRect[2] = stationW;

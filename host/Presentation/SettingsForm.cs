@@ -48,11 +48,23 @@ namespace Scream.Presentation
         }
 
         private bool _darkMode;
+        private bool _wasMinimized;
 
         protected override void OnHandleCreated(EventArgs e)
         {
             base.OnHandleCreated(e);
             ApplyDwmTitlebar(_darkMode);
+        }
+
+        protected override void OnResize(EventArgs e)
+        {
+            base.OnResize(e);
+            bool minimized = WindowState == FormWindowState.Minimized;
+            if (minimized != _wasMinimized)
+            {
+                _wasMinimized = minimized;
+                PostJson(minimized ? "{\"t\":\"previewVis\",\"v\":false}" : "{\"t\":\"previewVis\",\"v\":true}");
+            }
         }
 
         public void SetDarkMode(bool dark)

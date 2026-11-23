@@ -220,8 +220,8 @@ export function createAlpineFlock(gl, onReady) {
   const sheep = [];
 
   function resize(W, H) {
-    // Strictly allocate ONLY the lower hillside band (0.38*H..H) capped at 1152px wide (~1.85MB vs 8.3MB!)
-    const scale = Math.min(1.0, 1152 / Math.max(1, W));
+    // Strictly allocate ONLY the lower hillside band (0.38*H..H) capped at 800px wide (~0.9MB vs 8.3MB!)
+    const scale = Math.min(1.0, 800 / Math.max(1, W));
     const nw = Math.max(320, Math.round(W * scale));
     const nh = Math.max(120, Math.round(H * FIELD_BAND_H * scale));
     if (canvas.width !== nw || canvas.height !== nh) {

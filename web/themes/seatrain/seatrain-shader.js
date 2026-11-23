@@ -11,6 +11,161 @@
  *   6. Refined Adaptive Desktop Icons: silky light-reactive atmospheric halo + floating Ghibli spirit fireflies above horizon,
  *      and moonlight/sunlit concentric water ripples below horizon (zero plastic sponge blobs!)
  */
+/**
+ * Quarter-Resolution 3D Volumetric Raymarched Aurora Borealis Offscreen Pass (~40x fewer GPU ALU ops!)
+ * Renders ONLY the upper sky dome (y: 0..horizonY) into a lightweight 1/4 x 1/4 FBO texture when night > 0.015.
+ * Hardware bilinear filtering (gl.LINEAR) naturally smooths IGN dither into velvet Northern Lights curtains,
+ * and SEATRAIN_FS reuses the exact same texture for BOTH sky & mirror ocean reflection with 1 texture fetch!
+ */
+export const SEATRAIN_AURORA_FS = `#version 300 es
+precision highp float;
+
+uniform sampler2D uFA;
+uniform sampler2D uFB;
+uniform vec2 uAuroraRes;  // Quarter-res FBO pixel size
+uniform vec2 uCssRes;     // Full viewport CSS size
+uniform vec2 uGrid;
+uniform float uStep;
+uniform float uMix;
+uniform float uTime;
+uniform float uWindTime;
+uniform float uWorldScroll;
+uniform float uAdaptive;
+uniform float uNight;
+
+out vec4 fragColor;
+
+float ss(float a, float b, float x) {
+  float t = clamp((x - a) / (b - a), 0.0, 1.0);
+  return t * t * (3.0 - 2.0 * t);
+}
+
+float fieldS(vec2 p) {
+  vec2 uv = (p / uStep + 0.5) / uGrid;
+  return mix(texture(uFA, uv).r, texture(uFB, uv).r, uMix);
+}
+
+float ign(vec2 p) {
+  return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715))));
+}
+
+float tri(float x) {
+  return clamp(abs(fract(x) - 0.5), 0.01, 0.49);
+}
+
+vec2 tri2(vec2 p) {
+  return vec2(tri(p.x + tri(p.y)), tri(p.y + tri(p.x)));
+}
+
+// 4-octave domain-warped geomagnetic sheet density with frame-constant rotT precomputed ONCE outside the raymarch!
+float auroraSheetDensityFast(vec2 p, mat2 rotT) {
+  float z = 1.8;
+  float z2 = 2.5;
+  float rz = 0.0;
+  p *= mat2(0.2675, 0.9636, -0.9636, 0.2675);
+  vec2 bp = p;
+  const mat2 m2 = mat2(0.95534, 0.29552, -0.29552, 0.95534);
+
+  for (int i = 0; i < 4; i++) {
+    vec2 dg = rotT * (tri2(bp * 1.85) * 0.75);
+    p -= dg / z2;
+    bp *= 1.30;
+    z2 *= 0.45;
+    z  *= 0.42;
+    p  *= 1.21 + (rz - 1.0) * 0.02;
+    rz += tri(p.x + tri(p.y)) * z;
+    p = m2 * p;
+  }
+  return clamp(1.0 / pow(max(0.025, rz * 29.0), 1.3), 0.0, 0.55);
+}
+
+void main() {
+  float night = clamp(uNight, 0.0, 1.0);
+  if (night <= 0.015) {
+    fragColor = vec4(0.0);
+    return;
+  }
+
+  vec2 uv = vec2(gl_FragCoord.x / max(1.0, uAuroraRes.x), gl_FragCoord.y / max(1.0, uAuroraRes.y));
+  float ny = uv.y; // 0 = zenith (texCoord.y = 0), 1 = horizon waterline (texCoord.y = 1)
+  if (ny > 0.94) {
+    fragColor = vec4(0.0);
+    return;
+  }
+
+  float horizonY = uCssRes.y * 0.735;
+  vec2 sp = vec2(uv.x * uCssRes.x, ny * horizonY);
+
+  float horFade = 1.0 - ss(0.72, 0.94, ny);
+  if (horFade <= 0.004) {
+    fragColor = vec4(0.0);
+    return;
+  }
+
+  vec2 moonPos = vec2(uCssRes.x * 0.80, horizonY * 0.20);
+  float mRad = clamp(min(uCssRes.x, uCssRes.y) * 0.042, 20.0, 38.0);
+  float moonMask = ss(mRad * 1.4, mRad * 5.6, length(sp - moonPos));
+
+  vec2 ndc = vec2(
+    (sp.x - uCssRes.x * 0.5) / max(1.0, uCssRes.y),
+    (horizonY - sp.y) / max(1.0, horizonY)
+  );
+  vec3 rd = normalize(vec3(ndc.x * 1.12, ndc.y * 0.56 + 0.04, 1.0));
+
+  float iconBoost = 1.0;
+  if (uAdaptive >= 0.5) {
+    float sCenter = fieldS(sp);
+    float sUp     = fieldS(vec2(sp.x, max(4.0, sp.y - 110.0)));
+    float sDown   = fieldS(vec2(sp.x, min(horizonY - 4.0, sp.y + 110.0)));
+    float sAvg    = (sCenter + sUp + sDown) * 0.3333;
+    iconBoost = mix(0.62, 1.22, ss(360.0, -70.0, sAvg));
+  }
+
+  float tA = uTime * 0.65 + uWindTime * 0.25 + 12.5;
+  float ang = tA * 0.055;
+  float ca = cos(ang), sa = sin(ang);
+  mat2 rotT = mat2(ca, sa, -sa, ca);
+
+  float dither = ign(gl_FragCoord.xy);
+  const int STEPS = 20;
+  const float FSTEPS = 20.0;
+  const float STEP_SCALE = 50.0 / FSTEPS;
+  vec2 driftOff = vec2(0.15 - uWorldScroll * 0.035, 5.5 - tA * 0.018);
+  float invRdY = 1.0 / (rd.y * 2.0 + 0.40);
+
+  vec3 colAcc = vec3(0.0);
+  vec3 avgCol = vec3(0.0);
+
+  for (int i = 0; i < STEPS; i++) {
+    float fi = float(i);
+    float s = fi * STEP_SCALE;
+    float frac = fi / FSTEPS;
+
+    float of = 0.006 * dither * ss(0.0, 15.0, s);
+    float pt = (0.80 + pow(max(0.0001, s), 1.4) * 0.002) * invRdY - of;
+    vec2 bpos = rd.xz * pt + driftOff;
+
+    float rzt = auroraSheetDensityFast(bpos, rotT);
+
+    vec3 cHem = vec3(0.42, 0.98, 0.14);
+    vec3 cMid = vec3(0.12, 0.74, 0.34);
+    vec3 cTop = vec3(0.40, 0.18, 0.56);
+    vec3 bandC = mix(cHem, cMid, ss(0.06, 0.44, frac));
+    bandC = mix(bandC, cTop, ss(0.56, 1.00, frac));
+
+    vec3 curCol = bandC * rzt;
+    avgCol = (i == 0) ? curCol : mix(avgCol, curCol, 0.50);
+    colAcc += avgCol * exp(-s * 0.048) * STEP_SCALE * 0.065;
+  }
+
+  float elevFade = clamp(rd.y * 4.5 - 0.12, 0.0, 1.0);
+  vec3 rawA = max(vec3(0.0), colAcc * 2.45 * iconBoost - vec3(0.018, 0.024, 0.014));
+  vec3 aurora = (vec3(1.0) - exp(-rawA * 1.45)) * 0.96;
+
+  fragColor = vec4(aurora * elevFade * horFade * (0.32 + 0.68 * moonMask) * night, 1.0);
+}
+`;
+
 export const SEATRAIN_FS = `#version 300 es
 precision highp float;
 
@@ -22,6 +177,8 @@ uniform sampler2D uTrainWinTex;
 uniform sampler2D uStationTex;
 uniform sampler2D uIslandTex;
 uniform sampler2D uCloudsTex;
+uniform sampler2D uAuroraTex;
+uniform sampler2D uMoonTex;
 
 uniform vec2 uRes;
 uniform vec2 uGrid;
@@ -43,6 +200,7 @@ uniform float uCloudsReady;
 uniform float uWake;        // 0..1 water splash & wake intensity
 uniform float uShowStation; // 0 or 1 flooded sixth station
 uniform float uShowIsland;  // 0 or 1 lonely grassy island cottage & tree
+uniform float uMoonPhase;   // 0=New, 0.25=First Qtr, 0.5=Full (100%), 0.75=Last Qtr
 uniform float uSeed;
 
 uniform vec4 uTrainRect;    // x, y, w, h in CSS px
@@ -179,7 +337,8 @@ vec3 gradePaintedCloud(
   vec2 moonPos,
   float mRad,
   float sunset,
-  float night
+  float night,
+  bool isRefl
 ) {
   // Subtle chromatic safeguard eliminating any stray green bounce on semi-transparent edges
   vec3 c = rawRgb;
@@ -204,62 +363,63 @@ vec3 gradePaintedCloud(
   colDay = mix(colDay, dayHi, ss(0.44, 0.92, dayLit));
   colDay += vec3(microTex * 0.14, microTex * 0.10, -microTex * 0.08);
 
-  // 3. NIGHT — CONTINUOUS 5-TAP BEER-LAMBERT VOLUMETRIC MOONLIGHT + INTERNAL 3D BILLOW RELIEF!
-  //    (Eliminates chunky 16px/42px cartoon contour bands & preserves painted Kazuo Oga cumulus volume!)
+  // 3. NIGHT — CONTINUOUS BEER-LAMBERT VOLUMETRIC MOONLIGHT + INTERNAL 3D BILLOW RELIEF!
+  //    (5-tap high fidelity in upper sky; fast 2-tap in rippled mirror ocean reflection -> 60% less texture traffic!)
   vec3 colNgt = vec3(0.045, 0.075, 0.16);
   if (night > 0.005) {
     vec2 toMoon = moonPos - sp;
     float dMoon = length(toMoon);
     vec2 dirM = toMoon / max(1.0, dMoon);
 
-    // 5 exponentially-spaced directional taps toward the Full Moon -> continuous silky optical depth (ZERO stepped bands!)
     float pxToV = 1.0 / max(1.0, vSpan * horizonY);
     vec2 pxStep = vec2(dirM.x / periodW, dirM.y * pxToV);
 
-    vec4 t1 = texture(uCloudsTex, vec2(cUV.x + pxStep.x * 2.5,  clamp(cUV.y + pxStep.y * 2.5,  0.0, 1.0)));
-    vec4 t2 = texture(uCloudsTex, vec2(cUV.x + pxStep.x * 6.5,  clamp(cUV.y + pxStep.y * 6.5,  0.0, 1.0)));
-    vec4 t3 = texture(uCloudsTex, vec2(cUV.x + pxStep.x * 13.0, clamp(cUV.y + pxStep.y * 13.0, 0.0, 1.0)));
-    vec4 t4 = texture(uCloudsTex, vec2(cUV.x + pxStep.x * 23.0, clamp(cUV.y + pxStep.y * 23.0, 0.0, 1.0)));
-    vec4 t5 = texture(uCloudsTex, vec2(cUV.x + pxStep.x * 38.0, clamp(cUV.y + pxStep.y * 38.0, 0.0, 1.0)));
-
-    // Continuous Beer-Lambert optical thickness along line-of-sight toward the Moon
-    float tau = t1.a * 0.28 + t2.a * 0.42 + t3.a * 0.62 + t4.a * 0.85 + t5.a * 1.05;
-    float transmittance = exp(-tau * 1.15);
-
-    // Razor-fine feathered Mie silver lining strictly on OPAQUE cloud rims facing the Moon (ZERO rim on translucent rain!)
+    float tau;
+    float fineEdge;
+    float puffFacingMoon;
     float solidCloud = ss(0.56, 0.96, alpha);
-    float fineEdge = clamp(alpha - (t1.a * 0.55 + t2.a * 0.30 + t3.a * 0.15), 0.0, 1.0) * solidCloud;
-    float softRim  = pow(transmittance, 1.65) * solidCloud;
-
-    // Recover continuous 3D internal cumulus puff relief from the hand-painted gouache luminance gradient!
-    float lumNear = dot(t2.rgb, vec3(0.299, 0.587, 0.114)) * t2.a;
-    float lumMid  = dot(t3.rgb, vec3(0.299, 0.587, 0.114)) * t3.a;
     float internalRelief = clamp((lum - 0.30) / 0.58, 0.0, 1.0);
-    float puffFacingMoon = clamp(0.42 + (lum - lumNear) * 2.2 + (lum - lumMid) * 1.1, 0.0, 1.0);
 
-    // Henyey-Greenstein-like distance & angular falloff from the Full Moon
+    if (isRefl) {
+      vec4 t2 = texture(uCloudsTex, vec2(cUV.x + pxStep.x * 6.5,  clamp(cUV.y + pxStep.y * 6.5,  0.0, 1.0)));
+      vec4 t4 = texture(uCloudsTex, vec2(cUV.x + pxStep.x * 23.0, clamp(cUV.y + pxStep.y * 23.0, 0.0, 1.0)));
+      tau = t2.a * 1.12 + t4.a * 2.10;
+      fineEdge = clamp(alpha - t2.a, 0.0, 1.0) * solidCloud;
+      float lumNear = dot(t2.rgb, vec3(0.299, 0.587, 0.114)) * t2.a;
+      puffFacingMoon = clamp(0.45 + (lum - lumNear) * 2.6, 0.0, 1.0);
+    } else {
+      vec4 t1 = texture(uCloudsTex, vec2(cUV.x + pxStep.x * 2.5,  clamp(cUV.y + pxStep.y * 2.5,  0.0, 1.0)));
+      vec4 t2 = texture(uCloudsTex, vec2(cUV.x + pxStep.x * 6.5,  clamp(cUV.y + pxStep.y * 6.5,  0.0, 1.0)));
+      vec4 t3 = texture(uCloudsTex, vec2(cUV.x + pxStep.x * 13.0, clamp(cUV.y + pxStep.y * 13.0, 0.0, 1.0)));
+      vec4 t4 = texture(uCloudsTex, vec2(cUV.x + pxStep.x * 23.0, clamp(cUV.y + pxStep.y * 23.0, 0.0, 1.0)));
+      vec4 t5 = texture(uCloudsTex, vec2(cUV.x + pxStep.x * 38.0, clamp(cUV.y + pxStep.y * 38.0, 0.0, 1.0)));
+      tau = t1.a * 0.28 + t2.a * 0.42 + t3.a * 0.62 + t4.a * 0.85 + t5.a * 1.05;
+      fineEdge = clamp(alpha - (t1.a * 0.55 + t2.a * 0.30 + t3.a * 0.15), 0.0, 1.0) * solidCloud;
+      float lumNear = dot(t2.rgb, vec3(0.299, 0.587, 0.114)) * t2.a;
+      float lumMid  = dot(t3.rgb, vec3(0.299, 0.587, 0.114)) * t3.a;
+      puffFacingMoon = clamp(0.42 + (lum - lumNear) * 2.2 + (lum - lumMid) * 1.1, 0.0, 1.0);
+    }
+
+    float transmittance = exp(-tau * 1.15);
+    float softRim  = pow(max(0.0001, transmittance), 1.65) * solidCloud;
+
     float maxSpan = max(cssRes.x, cssRes.y);
     float moonReach = exp(-dMoon / (maxSpan * 0.58));
     float moonMie   = exp(-dMoon / (mRad * 7.5));
 
-    // Realistic night-sky aerial perspective & atmospheric airglow (5km-distant clouds are deep slate-indigo, NEVER #040814 black!)
     vec3 ngtShadow = vec3(0.052, 0.084, 0.168);
     vec3 ngtMid    = vec3(0.115, 0.175, 0.308);
     vec3 ngtPuff   = vec3(0.235, 0.342, 0.530);
 
-    // Base internal 3D cumulus volume illuminated softly by starry zenith airglow & painted puff domes!
     float zenithLit = (1.0 - ss(0.12, 0.86, cUV.y)) * 0.45 + internalRelief * 0.55;
     colNgt = mix(ngtShadow, ngtMid, clamp(zenithLit * 0.85, 0.0, 1.0));
 
-    // Soft directional moonlight illuminating Moon-facing internal puffs & smooth translucent outer layers
     float moonDiff = clamp((softRim * 0.62 + puffFacingMoon * internalRelief * 0.52) * (0.28 + 0.82 * moonReach), 0.0, 1.0);
     colNgt = mix(colNgt, ngtPuff, ss(0.12, 0.88, moonDiff));
 
-    // Delicate, feathered, physically-thin silver lining (strictly 2-8px feathered Mie scatter, NEVER a flat 42px grey ribbon!)
-    float silverAmt = fineEdge * (0.28 + 0.72 * pow(moonReach, 1.1)) + moonMie * softRim * 0.48;
+    float silverAmt = fineEdge * (0.28 + 0.72 * pow(max(0.0001, moonReach), 1.1)) + moonMie * softRim * 0.48;
     colNgt = mix(colNgt, vec3(0.76, 0.86, 0.98), clamp(silverAmt * 0.72, 0.0, 0.78));
 
-    // Translucent falling rain mist (alpha < 0.55) stays soft atmospheric night rain with zero edge highlight
     vec3 rainNight = vec3(0.068, 0.105, 0.205);
     colNgt = mix(rainNight, colNgt, ss(0.25, 0.65, alpha));
   }
@@ -267,136 +427,11 @@ vec3 gradePaintedCloud(
   return moodMix(colDay, colSun, colNgt, sunset, night);
 }
 
-// Interleaved Gradient Noise (Jimenez) for butter-smooth zero-banding 3D volumetric raymarching
-float ign(vec2 p) {
-  return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715))));
-}
-
-// Clamped triangular wave for crisp, pleated geomagnetic ribbon sheets (Nimitz physical Aurora method)
-float tri(float x) {
-  return clamp(abs(fract(x) - 0.5), 0.01, 0.49);
-}
-
-// Coupled 2D triangular wave — creates authentic folded S-curve Kelvin-Helmholtz aurora curtains!
-vec2 tri2(vec2 p) {
-  return vec2(tri(p.x + tri(p.y)), tri(p.y + tri(p.x)));
-}
-
-// 5-octave domain-warped geomagnetic sheet density in 3D ionosphere horizontal plane (x, z)
-// Pure ALU: blazing fast & produces razor-crisp pleated silk folds + fine vertical magnetic rays!
-float auroraSheetDensity(vec2 p, float spd, float t) {
-  float z = 1.8;
-  float z2 = 2.5;
-  float rz = 0.0;
-  // Rotate by 1.3 rad so folds sweep naturally diagonally across the sky
-  p *= mat2(0.2675, 0.9636, -0.9636, 0.2675);
-  vec2 bp = p;
-  float ang = t * spd;
-  float ca = cos(ang), sa = sin(ang);
-  mat2 rotT = mat2(ca, sa, -sa, ca);
-  const mat2 m2 = mat2(0.95534, 0.29552, -0.29552, 0.95534);
-
-  for (int i = 0; i < 5; i++) {
-    vec2 dg = tri2(bp * 1.85) * 0.75;
-    dg = rotT * dg;
-    p -= dg / z2;
-
-    bp *= 1.30;
-    z2 *= 0.45;
-    z  *= 0.42;
-    p  *= 1.21 + (rz - 1.0) * 0.02;
-
-    rz += tri(p.x + tri(p.y)) * z;
-    p = m2 * p;
-  }
-  return clamp(1.0 / pow(max(0.025, rz * 29.0), 1.3), 0.0, 0.55);
-}
-
-// TRUE 3D PERSPECTIVE VOLUMETRIC RAYMARCHED AURORA BOREALIS (EXACT NIMITZ IONOSPHERE RAYMARCH)!
-// Visually verified against real Northern Lights photography:
-//   - Pierces 32 rising 3D perspective altitude planes along true upward-tilted sky camera rays
-//   - Produces razor-real pleated S-curve curtains, bright vertical flame-needle hems & 3D zenith convergence
-//   - Broadly amplified near desktop icon constellations without distorting the crisp vertical magnetic rays
-//   - Fully transparent additive emission (stars twinkle cleanly through) + live reflection in mirror ocean!
-vec3 evalRealAurora3D(
-  vec2 sp,
-  vec2 cssRes,
-  float horizonY,
-  float wt,
-  float ny,
-  vec2 moonPos,
-  float mRad,
-  float night,
-  bool isRefl
-) {
-  if (night <= 0.015 || ny > 0.94) return vec3(0.0);
-
-  // Soft horizon extinction + gentle breathing room right around the Full Moon disc
-  float horFade = 1.0 - ss(0.72, 0.94, ny);
-  if (horFade <= 0.004) return vec3(0.0);
-  float moonMask = ss(mRad * 1.4, mRad * 5.6, length(sp - moonPos));
-
-  // True 3D upward-tilted wide-angle sky camera ray!
-  vec2 ndc = vec2(
-    (sp.x - cssRes.x * 0.5) / max(1.0, cssRes.y),
-    (horizonY - sp.y) / max(1.0, horizonY)
-  );
-  vec3 rd = normalize(vec3(ndc.x * 1.12, ndc.y * 0.56 + 0.04, 1.0));
-
-  // Ultra-broad seamless icon-constellation luminance guidance (ZERO visible circular spotlight edge!)
-  float iconBoost = 1.0;
-  if (uAdaptive >= 0.5) {
-    float sCenter = fieldS(sp);
-    float sUp     = fieldS(vec2(sp.x, max(4.0, sp.y - 110.0)));
-    float sDown   = fieldS(vec2(sp.x, min(horizonY - 4.0, sp.y + 110.0)));
-    float sAvg    = (sCenter + sUp + sDown) * 0.3333;
-    iconBoost = mix(0.62, 1.22, ss(360.0, -70.0, sAvg));
-  }
-
-  float tA = uTime * 0.65 + wt * 0.25 + 12.5;
-  float dither = ign(gl_FragCoord.xy);
-  int steps = isRefl ? 16 : 32;
-  float fSteps = float(steps);
-  float stepScale = 50.0 / fSteps;
-
-  vec3 colAcc = vec3(0.0);
-  vec3 avgCol = vec3(0.0);
-
-  for (int i = 0; i < 32; i++) {
-    if (i >= steps) break;
-    float fi = float(i);
-    float s = fi * stepScale; // Equivalent 0..50 altitude slice index
-    float frac = fi / fSteps;
-
-    // Exact perspective altitude-plane intersection: tight thin 3D slice produces tall crisp pleated vertical curtains!
-    float of = 0.006 * dither * ss(0.0, 15.0, s);
-    float pt = (0.80 + pow(s, 1.4) * 0.002) / (rd.y * 2.0 + 0.40);
-    pt -= of;
-    vec2 bpos = rd.xz * pt + vec2(0.15 - uWorldScroll * 0.035, 5.5 - tA * 0.018);
-
-    float rzt = auroraSheetDensity(bpos, 0.055, tA);
-
-    // Authentic photographed Northern Lights ionospheric spectrum:
-    //   - Lower bright curtain hem (~100km, O 557.7nm): luminous warm chartreuse / yellow-emerald green
-    //   - Mid vertical curtain: rich natural emerald -> polar jade green
-    //   - Upper fading tips (~250km, O 630nm): whisper-soft dusky violet-indigo
-    vec3 cHem = vec3(0.42, 0.98, 0.14);
-    vec3 cMid = vec3(0.12, 0.74, 0.34);
-    vec3 cTop = vec3(0.40, 0.18, 0.56);
-    vec3 bandC = mix(cHem, cMid, ss(0.06, 0.44, frac));
-    bandC = mix(bandC, cTop, ss(0.56, 1.00, frac));
-
-    vec3 curCol = bandC * rzt;
-    avgCol = (i == 0) ? curCol : mix(avgCol, curCol, 0.50);
-    colAcc += avgCol * exp(-s * 0.048) * stepScale * 0.065;
-  }
-
-  float elevFade = clamp(rd.y * 4.5 - 0.12, 0.0, 1.0);
-  // Trim very dim background noise floor so empty starry sky valleys stay pure deep midnight indigo!
-  vec3 rawA = max(vec3(0.0), colAcc * 2.45 * iconBoost - vec3(0.018, 0.024, 0.014));
-  vec3 aurora = (vec3(1.0) - exp(-rawA * 1.45)) * 0.96;
-
-  return aurora * elevFade * horFade * (0.32 + 0.68 * moonMask) * night;
+// Samples the pre-rendered quarter-resolution 3D Volumetric Aurora FBO texture (1 fetch vs 160 loop ops!)
+vec3 sampleAuroraTex(vec2 sp, vec2 cssRes, float ny, float night) {
+  if (night <= 0.015 || ny > 0.95) return vec3(0.0);
+  vec2 aUV = vec2(clamp(sp.x / max(1.0, cssRes.x), 0.0, 1.0), clamp(ny, 0.0, 1.0));
+  return texture(uAuroraTex, aUV).rgb;
 }
 
 // Delicate floating Ghibli Spirit Fireflies / Golden Stardust Motes drifting organically around sky icons!
@@ -513,33 +548,73 @@ vec3 evalSkyScene(
       }
     }
 
-    // Jewel-clean Full Moon with optical limb diffraction bloom + soft organic lunar seas + Rayleigh/Mie corona
+    // Real NASA-grade Near-Side Lunar Surface (uMoonTex: RGB=Maria+Tycho albedo, A=3D relief) + 3D Spherical Phase!
+    float moonTheta = uMoonPhase * 6.2831853;
+    float moonIllum = 0.5 - 0.5 * cos(moonTheta);
+    float phaseGlow = mix(0.16, 1.0, pow(max(0.0001, moonIllum), 0.65));
+    vec2 mLocal = (sp - moonPos) / max(1.0, mRad);
+    float rN = length(mLocal);
+    vec2 rotM = vec2(mLocal.x * 0.97 + mLocal.y * 0.24, -mLocal.x * 0.24 + mLocal.y * 0.97);
+    float lx = sin(moonTheta);
+    float lz = -cos(moonTheta);
     float dOuter = dMoon - mRad;
     float disc = ss(1.8, -1.4, dOuter);
-    float limbBloom = exp(-max(dOuter, 0.0) / (mRad * 0.28)) * 0.42;
-    float aureole   = exp(-max(dOuter, 0.0) / (mRad * 1.35)) * 0.52;
-    float corona    = exp(-max(dOuter, 0.0) / (mRad * 5.20)) * 0.24;
-    col += vec3(0.98, 0.98, 0.94) * limbBloom * 0.55 * night;
+
+    // Directional aureole hugs the sunlit crescent cleanly; full corona shines symmetrically at Full Moon
+    float limbDir = mix(clamp(0.55 + 0.45 * (rotM.x / max(0.25, rN)) * lx, 0.18, 1.0), 1.0, moonIllum);
+    vec3 skyBeforeMoon = col;
+    float limbBloom = exp(-max(dOuter, 0.0) / (mRad * 0.28)) * 0.40 * phaseGlow * limbDir;
+    float aureole   = exp(-max(dOuter, 0.0) / (mRad * 1.35)) * 0.50 * phaseGlow * limbDir;
+    float corona    = exp(-max(dOuter, 0.0) / (mRad * 5.20)) * 0.24 * phaseGlow;
+    col += vec3(0.98, 0.98, 0.94) * limbBloom * 0.52 * night;
     col += vec3(0.90, 0.93, 0.96) * aureole   * 0.44 * night;
     col += vec3(0.46, 0.68, 0.96) * corona    * 0.66 * night;
     if (disc > 0.002) {
-      vec2 mLocal = (sp - moonPos) / max(1.0, mRad);
-      float rN = clamp(length(mLocal), 0.0, 1.0);
-      float limb = pow(max(0.0001, 1.0 - rN * rN * 0.65), 0.22);
-      float m1 = N(mLocal * 36.0 + vec2(41.0, 27.0), 256.0).r;
-      float m2 = N(mLocal * 68.0 + vec2(93.0, 61.0), 256.0).g;
-      float maria = ss(0.44, 0.74, m1 * 0.68 + m2 * 0.32) * (1.0 - ss(0.76, 1.0, rN));
-      vec3 moonCol = mix(vec3(1.02, 1.01, 0.97), vec3(0.76, 0.81, 0.89), maria * 0.28) * mix(0.92, 1.04, limb);
+      float rClamped = min(1.0, rN);
+      float z3 = sqrt(max(0.0, 1.0 - rClamped * rClamped));
+      vec2 mUV = clamp(rotM * 0.480 + 0.5, 0.005, 0.995);
+      vec4 mTex = texture(uMoonTex, mUV);
+      float h0 = mTex.a;
+      float hx = texture(uMoonTex, clamp(mUV + vec2(0.0058, 0.0), 0.005, 0.995)).a;
+      float ndotlSmooth = rotM.x * lx + z3 * lz;
+      float litPhase = ss(-0.05, 0.16, ndotlSmooth + (h0 - 0.5) * 0.045);
+      float termBand = exp(-sq((ndotlSmooth - 0.14) / 0.316)) * litPhase;
+      float relief = clamp(1.0 + (h0 - hx) * lx * 4.2 * termBand, 0.78, 1.24);
+      float regolith = 0.94 + 0.12 * pow(max(0.0001, z3), 0.14);
+      vec3 moonLitCol = mTex.rgb * regolith * relief * vec3(1.04, 1.03, 0.99);
+      vec3 earthshine = skyBeforeMoon * 0.88 + mTex.rgb * vec3(0.062, 0.088, 0.132) + vec3(0.008, 0.015, 0.032);
+      vec3 moonCol = mix(earthshine, moonLitCol, litPhase);
       col = mix(col, moonCol, disc * night * 0.99);
     }
   }
 
-  if ((night + sunset) > 0.04) {
+  // Pre-sample hand-painted cumulus panorama once so fully opaque clouds skip hidden stars/cirrus/meteors behind them!
+  vec4 cTex = vec4(0.0);
+  vec2 cUV = vec2(0.0);
+  float cPeriodW = 1.0;
+  float cVSpan = 1.0;
+  bool hasCloudSample = false;
+  if (uCloudsReady > 0.5) {
+    float vTop = 1.0 - (0.62 + 0.34 * cDense);
+    float vBot = 1.01;
+    cVSpan = max(0.001, vBot - vTop);
+    float cV = (ny - vTop) / cVSpan;
+    if (cV >= 0.0 && cV <= 1.0) {
+      cPeriodW = max(cssRes.x * 1.55, horizonY * 3.75);
+      float cU = sp.x / cPeriodW - uWorldScroll * 0.135 - wt * 0.0026;
+      cUV = vec2(cU, cV);
+      cTex = texture(uCloudsTex, cUV);
+      hasCloudSample = cTex.a > 0.004;
+    }
+  }
+  bool cloudOpaque = hasCloudSample && cTex.a > 0.96 && cUV.y > 0.03 && cUV.y < 0.96;
+
+  if (!cloudOpaque && (night + sunset) > 0.04) {
     col += shootingStars(sp, cssRes, uTime, sunset, night, moonPos, mRad);
   }
 
   // 3. Silky High-Altitude Horizontal Cirrus Strata (strictly 2D horizontal streaks + Mie glow near Moon, ZERO dark blotches!)
-  if (ny < 0.28) {
+  if (!cloudOpaque && ny < 0.28) {
     float topBand = ss(0.01, 0.07, ny) * (1.0 - ss(0.11, 0.27, ny));
     float highScroll = scrollPx * 0.36 + wt * 10.0;
     // True 2D stretched patch (both X and Y vary softly — never a vertical column!)
@@ -559,40 +634,30 @@ vec3 evalSkyScene(
     }
   }
 
-  // 4. TRUE 3D VOLUMETRIC RAYMARCHED AURORA BOREALIS AT NIGHT (stars shine THROUGH, clouds sit in front,
-  //    AND reflects live in the mirror ocean below!)
+  // 4. PRE-RENDERED QUARTER-RES 3D VOLUMETRIC AURORA BOREALIS (1 texture fetch for BOTH sky & ocean mirror!)
   vec3 auroraGlow = vec3(0.0);
   if (night > 0.015) {
-    auroraGlow = evalRealAurora3D(sp, cssRes, horizonY, wt, ny, moonPos, mRad, night, isRefl);
-    col += auroraGlow * (isRefl ? 0.78 : 0.95);
+    auroraGlow = sampleAuroraTex(sp, cssRes, ny, night);
+    if (!cloudOpaque) {
+      col += auroraGlow * (isRefl ? 0.78 : 0.95);
+    }
   }
 
   // 5. HAND-PAINTED SEAMLESS STUDIO GHIBLI CUMULUS PANORAMA (uCloudsTex, physically lit from Moon/Sun!)
-  if (uCloudsReady > 0.5) {
-    float vTop = 1.0 - (0.62 + 0.34 * cDense);
-    float vBot = 1.01;
-    float vSpan = max(0.001, vBot - vTop);
-    float cV = (ny - vTop) / vSpan;
-    if (cV >= 0.0 && cV <= 1.0) {
-      float periodW = max(cssRes.x * 1.55, horizonY * 3.75);
-      float cU = sp.x / periodW - uWorldScroll * 0.135 - wt * 0.0026;
-      vec4 cTex = texture(uCloudsTex, vec2(cU, cV));
-      if (cTex.a > 0.004) {
-        vec3 cGraded = gradePaintedCloud(
-          cTex.rgb, cTex.a, vec2(cU, cV), sp, cssRes, horizonY, periodW, vSpan, moonPos, mRad, sunset, night
-        );
-        // Physically accurate subtle emerald subsurface scatter strictly on thin translucent cloud tufts backlit by Aurora!
-        if (night > 0.015) {
-          float thinCloudRim = cTex.a * (1.0 - cTex.a) * 4.0;
-          cGraded += auroraGlow * (0.04 + 0.24 * thinCloudRim);
-        }
-        // Gentle atmospheric aerial veil down near the horizon waterline
-        float horSoft = ss(0.84, 1.0, ny) * 0.24;
-        cGraded = mix(cGraded, skyBot, horSoft);
-        float cAlpha = cTex.a * ss(0.0, 0.03, cV) * (1.0 - ss(0.96, 1.0, cV) * 0.25);
-        col = mix(col, cGraded, clamp(cAlpha * (0.86 + 0.14 * cDense), 0.0, 0.98));
-      }
+  if (hasCloudSample) {
+    vec3 cGraded = gradePaintedCloud(
+      cTex.rgb, cTex.a, cUV, sp, cssRes, horizonY, cPeriodW, cVSpan, moonPos, mRad, sunset, night, isRefl
+    );
+    // Physically accurate subtle emerald subsurface scatter strictly on thin translucent cloud tufts backlit by Aurora!
+    if (night > 0.015) {
+      float thinCloudRim = cTex.a * (1.0 - cTex.a) * 4.0;
+      cGraded += auroraGlow * (0.04 + 0.24 * thinCloudRim);
     }
+    // Gentle atmospheric aerial veil down near the horizon waterline
+    float horSoft = ss(0.84, 1.0, ny) * 0.24;
+    cGraded = mix(cGraded, skyBot, horSoft);
+    float cAlpha = cTex.a * ss(0.0, 0.03, cUV.y) * (1.0 - ss(0.96, 1.0, cUV.y) * 0.25);
+    col = mix(col, cGraded, clamp(cAlpha * (0.86 + 0.14 * cDense), 0.0, 0.98));
   }
 
   // Soft low horizon mist band harmonizing cloud bases with the mirror sea waterline

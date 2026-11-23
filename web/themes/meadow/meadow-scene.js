@@ -11,9 +11,11 @@ import {
   createFieldTexture,
   uploadFieldTexture,
   createSeamlessNoiseTexture,
-  computeRenderDpr
+  computeRenderDpr,
+  createPerfGovernor
 } from '../../core/field-engine.js';
 import { createHostBridge } from '../../core/host-bridge.js';
+import { resolveMoonConfig, createMoonSurfaceLoader } from '../../core/moon-phase.js';
 import { MEADOW_FS } from './meadow-shader.js';
 import { createCloudGrid } from './cloud-grid.js';
 import { createKittenController } from './meadow-kitten.js';
@@ -67,6 +69,7 @@ const U = {
   uCat: gl.getUniformLocation(prog, 'uCat'),
   uActor: gl.getUniformLocation(prog, 'uActor'),
   uActorShadow: gl.getUniformLocation(prog, 'uActorShadow'),
+  uMoonTex: gl.getUniformLocation(prog, 'uMoonTex'),
   uRes: gl.getUniformLocation(prog, 'uRes'),
   uGrid: gl.getUniformLocation(prog, 'uGrid'),
   uCGrid: gl.getUniformLocation(prog, 'uCGrid'),
@@ -80,6 +83,7 @@ const U = {
   uSeed: gl.getUniformLocation(prog, 'uSeed'),
   uSunset: gl.getUniformLocation(prog, 'uSunset'),
   uNight: gl.getUniformLocation(prog, 'uNight'),
+  uMoonPhase: gl.getUniformLocation(prog, 'uMoonPhase'),
   uPond: gl.getUniformLocation(prog, 'uPond'),
   uWindA: gl.getUniformLocation(prog, 'uWindA'),
   uWindB: gl.getUniformLocation(prog, 'uWindB'),
@@ -105,10 +109,15 @@ const SCENE_SEED = 17.3;
 
 let simTime = 0, flowTime = 0, lastRaf = 0, lastDraw = 0;
 let sunsetMix = 0, nightMix = 0, moodInitialized = false;
+let moonCfg = { mode: 'full', date: '2000-08-15' };
+let moonPhase = 0.5;
 
 const pond = { x: 0, y: 0, rx: 0, ry: 0, active: false, initialized: false };
 
 const kitten = createKittenController(gl, () => {
+  if (paused) renderFrame(simTime);
+});
+const moonSurface = createMoonSurfaceLoader(gl, () => {
   if (paused) renderFrame(simTime);
 });
 const kiteBoy = createKiteBoyController(gl);
@@ -219,13 +228,22 @@ function relocateCharacters(snap = false) {
   }
 }
 
+const perf = createPerfGovernor({
+  isPreview,
+  onQualityChange() {
+    dpr = computeRenderDpr(W, H, isPreview, perf.qualityScale);
+    glCanvas.width = Math.max(1, Math.round(W * dpr));
+    glCanvas.height = Math.max(1, Math.round(H * dpr));
+  }
+});
+
 function allocResources() {
   W = Math.max(1, window.innerWidth);
   H = Math.max(1, window.innerHeight);
-  dpr = computeRenderDpr(W, H, isPreview);
+  dpr = computeRenderDpr(W, H, isPreview, perf.qualityScale);
 
-  glCanvas.width = Math.round(W * dpr);
-  glCanvas.height = Math.round(H * dpr);
+  glCanvas.width = Math.max(1, Math.round(W * dpr));
+  glCanvas.height = Math.max(1, Math.round(H * dpr));
 
   field.resize(W, H);
   if (texA) gl.deleteTexture(texA);
@@ -338,6 +356,10 @@ function renderFrame(t) {
   gl.bindTexture(gl.TEXTURE_2D, kiteBoy.actorShadowTex);
   gl.uniform1i(U.uActorShadow, 6);
 
+  gl.activeTexture(gl.TEXTURE7);
+  gl.bindTexture(gl.TEXTURE_2D, moonSurface.texture);
+  gl.uniform1i(U.uMoonTex, 7);
+
   gl.uniform2f(U.uRes, glCanvas.width, glCanvas.height);
   gl.uniform2f(U.uGrid, field.gw, field.gh);
   gl.uniform2f(U.uCGrid, cgW, cgH);
@@ -351,6 +373,7 @@ function renderFrame(t) {
   gl.uniform1f(U.uSeed, SCENE_SEED);
   gl.uniform1f(U.uSunset, sunsetMix);
   gl.uniform1f(U.uNight, nightMix);
+  gl.uniform1f(U.uMoonPhase, moonPhase);
   gl.uniform4f(U.uPond, pond.x, pond.y, pond.active ? pond.rx : 0, pond.active ? pond.ry : 0);
   gl.uniform4fv(U.uWindA, windRibbons.bufA);
   gl.uniform4fv(U.uWindB, windRibbons.bufB);
@@ -379,8 +402,9 @@ function renderFrame(t) {
 
 function tick(now) {
   requestAnimationFrame(tick);
-  if (paused && !needsInitialSettle) {
+  if (perf.isHidden || (paused && !needsInitialSettle)) {
     lastRaf = 0;
+    perf.resetTiming();
     return;
   }
 
@@ -392,13 +416,13 @@ function tick(now) {
   }
   const moodChanging = Math.abs(targetMood.sunset - sunsetMix) > 0.002
                     || Math.abs(targetMood.night - nightMix) > 0.002;
-  // Smooth vsync-aligned 60 FPS on desktop (zero 30fps hitch); lighter 35 FPS in small preview iframe
-  const targetInterval = isPreview ? 28 : 12;
-  if (!needsInitialSettle && lastDraw && now - lastDraw < targetInterval) return;
+  if (!needsInitialSettle && lastDraw && now - lastDraw < perf.targetInterval) return;
 
-  const dt = lastRaf ? Math.min(0.05, (now - lastRaf) / 1000) : 0.0167;
+  const elapsedMs = lastRaf ? (now - lastRaf) : 16.7;
+  const dt = lastRaf ? Math.min(0.05, elapsedMs / 1000) : 0.0167;
   lastRaf = now;
   lastDraw = now;
+  perf.reportFrame(elapsedMs, now);
   simTime += dt;
   flowTime += dt * Math.max(0.05, P.flow);
 
@@ -458,6 +482,11 @@ const bridge = createHostBridge({
       curMix = 1.0;
       needsInitialSettle = true;
     }
+  },
+  onMoon(cfg) {
+    moonCfg = cfg;
+    moonPhase = resolveMoonConfig(moonCfg).phase;
+    if (paused) renderFrame(simTime);
   },
   getCanvases: () => ({ glCanvas, overlayCanvas: null }),
   renderNow: () => renderFrame(simTime)

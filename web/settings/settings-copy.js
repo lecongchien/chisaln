@@ -52,7 +52,17 @@ export const COPY = {
     shareFail: (err) => `Không thể xuất tệp: ${err}`,
     shareTimeout: 'Hết thời gian chờ xuất tệp — hãy thử lại.',
     openFolder: 'Mở tệp',
-    hostRequired: 'Tính năng lưu trực tiếp hoạt động khi chạy qua ứng dụng Scream.exe.'
+    hostRequired: 'Tính năng lưu trực tiếp hoạt động khi chạy qua ứng dụng Scream.exe.',
+    moonGroup: 'Pha Mặt Trăng (Ban đêm)',
+    moonLabel: 'Độ tròn Mặt Trăng',
+    moonHint: 'Tính chính xác tỉ lệ tròn (%) theo ngày tháng năm sinh hoặc lịch trăng hôm nay — áp dụng chung cho mọi màn đêm',
+    moonOpts: { full: 'Trăng tròn', today: 'Hôm nay', birthday: 'Ngày sinh' },
+    moonPctFmt: (pct) => `Tròn ${pct}%`,
+    moonAgeFmt: (days) => `Tuổi trăng ~${days.toFixed(1)} ngày`,
+    moonDay: 'Ngày',
+    moonMonth: 'Tháng',
+    moonYear: 'Năm',
+    moonNightTip: 'Chuyển sang Ban đêm để ngắm trực tiếp pha trăng trên màn hình.'
   },
   en: {
     running: 'Live on desktop',
@@ -103,7 +113,17 @@ export const COPY = {
     shareFail: (err) => `Export failed: ${err}`,
     shareTimeout: 'Export timed out — please try again.',
     openFolder: 'Reveal File',
-    hostRequired: 'Direct disk export runs inside Scream.exe.'
+    hostRequired: 'Direct disk export runs inside Scream.exe.',
+    moonGroup: 'Lunar Phase (Night Sky)',
+    moonLabel: 'Moon Illumination',
+    moonHint: 'Astronomically computes the exact moon roundness (%) for your birth date or today — synced across all night scenes',
+    moonOpts: { full: 'Full Moon', today: 'Today', birthday: 'Birth Date' },
+    moonPctFmt: (pct) => `${pct}% Lit`,
+    moonAgeFmt: (days) => `Lunar age ~${days.toFixed(1)}d`,
+    moonDay: 'Day',
+    moonMonth: 'Month',
+    moonYear: 'Year',
+    moonNightTip: 'Switch to Night mode to admire your moon phase live.'
   }
 };
 

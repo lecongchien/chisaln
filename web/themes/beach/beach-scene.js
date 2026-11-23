@@ -10,7 +10,8 @@ import {
   createFieldTexture,
   uploadFieldTexture,
   createSeamlessNoiseTexture,
-  computeRenderDpr
+  computeRenderDpr,
+  createPerfGovernor
 } from '../../core/field-engine.js';
 import { createHostBridge } from '../../core/host-bridge.js';
 import { BEACH_FS, PALM_VS, PALM_FS } from './beach-shader.js';
@@ -144,13 +145,22 @@ const palmAtlas = createPalmAtlasLoader(gl, () => {
   if (paused) renderFrame(simTime);
 });
 
+const perf = createPerfGovernor({
+  isPreview,
+  onQualityChange() {
+    dpr = computeRenderDpr(W, H, isPreview, perf.qualityScale);
+    glCanvas.width = Math.max(1, Math.round(W * dpr));
+    glCanvas.height = Math.max(1, Math.round(H * dpr));
+  }
+});
+
 function allocResources() {
   W = Math.max(1, window.innerWidth);
   H = Math.max(1, window.innerHeight);
-  dpr = computeRenderDpr(W, H, isPreview);
+  dpr = computeRenderDpr(W, H, isPreview, perf.qualityScale);
 
-  glCanvas.width = Math.round(W * dpr);
-  glCanvas.height = Math.round(H * dpr);
+  glCanvas.width = Math.max(1, Math.round(W * dpr));
+  glCanvas.height = Math.max(1, Math.round(H * dpr));
 
   field.resize(W, H);
   if (texA) gl.deleteTexture(texA);
@@ -413,18 +423,19 @@ function renderFrame(t) {
 
 function tick(now) {
   requestAnimationFrame(tick);
-  if (paused && !needsInitialSettle) {
+  if (perf.isHidden || (paused && !needsInitialSettle)) {
     lastRaf = 0;
+    perf.resetTiming();
     return;
   }
 
-  // Smooth vsync-aligned 60 FPS on desktop (removes old 33ms 30fps cap); lighter 35 FPS in preview iframe
-  const targetInterval = isPreview ? 28 : 12;
-  if (!needsInitialSettle && lastDraw && now - lastDraw < targetInterval) return;
+  if (!needsInitialSettle && lastDraw && now - lastDraw < perf.targetInterval) return;
 
-  const dt = lastRaf ? Math.min(0.05, (now - lastRaf) / 1000) : 0.0167;
+  const elapsedMs = lastRaf ? (now - lastRaf) : 16.7;
+  const dt = lastRaf ? Math.min(0.05, elapsedMs / 1000) : 0.0167;
   lastRaf = now;
   lastDraw = now;
+  perf.reportFrame(elapsedMs, now);
   simTime += dt;
 
   if (curMix < 1.0) {

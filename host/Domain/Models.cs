@@ -9,6 +9,8 @@ namespace Scream.Domain
         public string Lang { get; set; } = "vi";
         public bool MultiMonitor { get; set; } = false;
         public bool AutoPause { get; set; } = true;
+        public string MoonMode { get; set; } = "full";
+        public string MoonDate { get; set; } = "2000-08-15";
         public Dictionary<string, Dictionary<string, double>> Params { get; set; } = new();
     }
 

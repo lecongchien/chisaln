@@ -146,6 +146,13 @@ export function createHostBridge(callbacks) {
         callbacks.onPause?.(paused, iconsSeen);
         break;
 
+      case 'moon':
+        callbacks.onMoon?.({
+          mode: msg.mode || 'full',
+          date: msg.date || '2000-08-15'
+        });
+        break;
+
       case 'snapshot':
         runSnapshotExport();
         break;

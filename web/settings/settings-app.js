@@ -5,9 +5,11 @@
  * and robust bidirectional WebView2 communication with WallpaperCoordinator.
  */
 import { COPY, THEME_THUMBS, THEME_SUBTITLES } from './settings-copy.js';
+import { resolveMoonConfig, parseIsoDate, formatIsoDate, drawMiniMoonCanvas } from '../core/moon-phase.js';
 
 const hasHost = !!(window.chrome && window.chrome.webview);
 const APPEARANCE_KEY = 'scream.ui.appearance';
+const MOON_THEMES = new Set(['seatrain', 'begonia', 'skyship', 'castle', 'meadow']);
 const darkMedia = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
 
 // Dependent controls disabled automatically when their parent toggle is OFF
@@ -25,6 +27,8 @@ const state = {
   lang: 'vi',
   activeTab: 'scene',
   appearance: loadSavedAppearance(), // 'auto' | 'light' | 'dark'
+  moonMode: 'full',                  // 'full' | 'today' | 'birthday'
+  moonDate: '2000-08-15',            // 'YYYY-MM-DD'
   paramsByTheme: {},
   paused: false,
   manualPause: false,
@@ -225,10 +229,23 @@ function syncPreviewState() {
   if (!themeObj) return;
   const bag = ensureThemeParams(themeObj);
   sendToPreview({ t: 'settings', v: bag });
+  sendToPreview({ t: 'moon', mode: state.moonMode, date: state.moonDate });
   if (state.latestIconsMsg) {
     sendToPreview(state.latestIconsMsg);
   }
   sendToPreview({ t: 'pause', v: state.manualPause, manual: true });
+}
+
+function updateMoonConfig(mode, dateStr) {
+  const validMode = (mode === 'today' || mode === 'birthday') ? mode : 'full';
+  state.moonMode = validMode;
+  if (typeof dateStr === 'string' && dateStr.trim()) {
+    const p = parseIsoDate(dateStr);
+    state.moonDate = formatIsoDate(p.year, p.month, p.day);
+  }
+  const msg = { t: 'moon', mode: state.moonMode, date: state.moonDate };
+  sendToHost(msg);
+  sendToPreview(msg);
 }
 
 function syncQuickTimeDock() {
@@ -258,7 +275,11 @@ function updateParamValue(key, val, { syncInspector = true } = {}) {
   bag[key] = val;
   sendToHost({ t: 'set', k: key, v: val });
   sendToPreview({ t: 'settings', v: { [key]: val } });
-  if (key === 'timeMode') syncQuickTimeDock();
+  if (key === 'timeMode') {
+    syncQuickTimeDock();
+    const tip = el.paramsContainer.querySelector('.moon-night-tip');
+    if (tip) tip.style.display = (Math.round(val) !== 2 && state.moonMode !== 'full') ? 'flex' : 'none';
+  }
   if (syncInspector) {
     refreshDependentStates();
   }
@@ -544,10 +565,216 @@ function renderParams({ preserveScroll = true } = {}) {
     el.paramsContainer.appendChild(sec);
   }
 
+  if (MOON_THEMES.has(themeObj.id)) {
+    el.paramsContainer.appendChild(buildMoonPhaseGroup(bag));
+  }
+
   refreshDependentStates();
   if (el.inspectorScroll) {
     el.inspectorScroll.scrollTop = preserveScroll ? savedScroll : 0;
   }
+}
+
+function buildMoonPhaseGroup(bag) {
+  const sec = document.createElement('section');
+  sec.className = 'param-group';
+
+  const title = document.createElement('div');
+  title.className = 'group-title';
+  title.textContent = t('moonGroup');
+  sec.appendChild(title);
+
+  const card = document.createElement('div');
+  card.className = 'group-card';
+
+  const row = document.createElement('div');
+  row.className = 'param-row';
+
+  const top = document.createElement('div');
+  top.className = 'param-top';
+  const lbl = document.createElement('span');
+  lbl.className = 'param-label';
+  lbl.textContent = t('moonLabel');
+  const valEl = document.createElement('span');
+  valEl.className = 'param-val';
+  top.appendChild(lbl);
+  top.appendChild(valEl);
+  row.appendChild(top);
+
+  const hint = document.createElement('div');
+  hint.className = 'param-hint';
+  hint.textContent = t('moonHint');
+  row.appendChild(hint);
+
+  // 3-mode Segmented Control: Full Moon | Today | Birth Date
+  const modes = ['full', 'today', 'birthday'];
+  const optsCopy = t('moonOpts');
+  const seg = document.createElement('div');
+  seg.className = 'seg-control';
+  seg.setAttribute('role', 'radiogroup');
+  seg.style.setProperty('--cols', '3');
+
+  // Live Mini 3D Moon Preview Strip
+  const previewStrip = document.createElement('div');
+  previewStrip.className = 'moon-preview-strip';
+  const miniCanvas = document.createElement('canvas');
+  miniCanvas.className = 'moon-mini-canvas';
+  miniCanvas.width = 88;
+  miniCanvas.height = 88;
+  const infoBox = document.createElement('div');
+  infoBox.className = 'moon-info';
+  const phaseNameEl = document.createElement('div');
+  phaseNameEl.className = 'moon-phase-name';
+  const phaseMetaEl = document.createElement('div');
+  phaseMetaEl.className = 'moon-phase-meta';
+  infoBox.appendChild(phaseNameEl);
+  infoBox.appendChild(phaseMetaEl);
+  previewStrip.appendChild(miniCanvas);
+  previewStrip.appendChild(infoBox);
+
+  // Vietnamese-friendly DD / MM / YYYY birth-date picker (zero US locale ambiguity!)
+  const dateGrid = document.createElement('div');
+  dateGrid.className = 'moon-date-grid';
+
+  const parsed = parseIsoDate(state.moonDate);
+
+  const dayField = document.createElement('div');
+  dayField.className = 'moon-date-field';
+  const dayLbl = document.createElement('label');
+  dayLbl.htmlFor = 'moon-day';
+  dayLbl.textContent = t('moonDay');
+  const daySel = document.createElement('select');
+  daySel.id = 'moon-day';
+  dayField.appendChild(dayLbl);
+  dayField.appendChild(daySel);
+
+  const monField = document.createElement('div');
+  monField.className = 'moon-date-field';
+  const monLbl = document.createElement('label');
+  monLbl.htmlFor = 'moon-month';
+  monLbl.textContent = t('moonMonth');
+  const monSel = document.createElement('select');
+  monSel.id = 'moon-month';
+  for (let m = 1; m <= 12; m++) {
+    const o = document.createElement('option');
+    o.value = String(m);
+    o.textContent = String(m).padStart(2, '0');
+    monSel.appendChild(o);
+  }
+  monSel.value = String(parsed.month);
+  monField.appendChild(monLbl);
+  monField.appendChild(monSel);
+
+  const yrField = document.createElement('div');
+  yrField.className = 'moon-date-field';
+  const yrLbl = document.createElement('label');
+  yrLbl.htmlFor = 'moon-year';
+  yrLbl.textContent = t('moonYear');
+  const yrInput = document.createElement('input');
+  yrInput.id = 'moon-year';
+  yrInput.type = 'number';
+  yrInput.min = '1900';
+  yrInput.max = '2100';
+  yrInput.step = '1';
+  yrInput.value = String(parsed.year);
+  yrField.appendChild(yrLbl);
+  yrField.appendChild(yrInput);
+
+  dateGrid.appendChild(dayField);
+  dateGrid.appendChild(monField);
+  dateGrid.appendChild(yrField);
+
+  const rebuildDays = (y, m, keepDay) => {
+    const maxD = new Date(y, m, 0).getDate();
+    const clamped = Math.max(1, Math.min(maxD, keepDay));
+    daySel.innerHTML = '';
+    for (let d = 1; d <= maxD; d++) {
+      const o = document.createElement('option');
+      o.value = String(d);
+      o.textContent = String(d).padStart(2, '0');
+      daySel.appendChild(o);
+    }
+    daySel.value = String(clamped);
+    return clamped;
+  };
+  rebuildDays(parsed.year, parsed.month, parsed.day);
+
+  // Subtle helper button when current scene is not in Night mode
+  const nightTip = document.createElement('div');
+  nightTip.className = 'moon-night-tip';
+  const tipText = document.createElement('span');
+  tipText.textContent = t('moonNightTip');
+  const tipBtn = document.createElement('button');
+  tipBtn.type = 'button';
+  tipBtn.textContent = t('timeQuickTitles')[2];
+  tipBtn.addEventListener('click', () => {
+    updateParamValue('timeMode', 2);
+    renderParams({ preserveScroll: true });
+  });
+  nightTip.appendChild(tipText);
+  nightTip.appendChild(tipBtn);
+
+  const refreshMoonUi = () => {
+    const info = resolveMoonConfig({ mode: state.moonMode, date: state.moonDate });
+    valEl.textContent = t('moonPctFmt')(info.pct);
+    phaseNameEl.textContent = state.lang === 'en' ? info.nameEn : info.nameVi;
+    const dateTag = info.year
+      ? `${String(info.day).padStart(2, '0')}/${String(info.month).padStart(2, '0')}/${info.year} · `
+      : '';
+    phaseMetaEl.textContent = `${dateTag}${t('moonPctFmt')(info.pct)} · ${t('moonAgeFmt')(info.ageDays)}`;
+    drawMiniMoonCanvas(miniCanvas, info.phase);
+    dateGrid.style.display = state.moonMode === 'birthday' ? 'grid' : 'none';
+    const isNightNow = Math.round(bag.timeMode ?? 0) === 2;
+    nightTip.style.display = (!isNightNow && state.moonMode !== 'full') ? 'flex' : 'none';
+  };
+
+  modes.forEach((mKey) => {
+    const ob = document.createElement('button');
+    ob.type = 'button';
+    ob.textContent = optsCopy[mKey];
+    const active = state.moonMode === mKey;
+    ob.classList.toggle('active', active);
+    ob.setAttribute('aria-pressed', String(active));
+    ob.addEventListener('click', () => {
+      seg.querySelectorAll('button').forEach((b, bi) => {
+        const isOn = modes[bi] === mKey;
+        b.classList.toggle('active', isOn);
+        b.setAttribute('aria-pressed', String(isOn));
+      });
+      updateMoonConfig(mKey, state.moonDate);
+      refreshMoonUi();
+    });
+    seg.appendChild(ob);
+  });
+
+  const commitDateInputs = () => {
+    const rawY = Number(yrInput.value);
+    if (!Number.isFinite(rawY) || rawY < 1900 || rawY > 2100) return;
+    const y = Math.round(rawY);
+    const m = Number(monSel.value) || 1;
+    const d = rebuildDays(y, m, Number(daySel.value) || 1);
+    updateMoonConfig('birthday', formatIsoDate(y, m, d));
+    refreshMoonUi();
+  };
+
+  daySel.addEventListener('change', commitDateInputs);
+  monSel.addEventListener('change', commitDateInputs);
+  yrInput.addEventListener('input', commitDateInputs);
+  yrInput.addEventListener('change', () => {
+    const clampedY = Math.max(1900, Math.min(2100, Math.round(Number(yrInput.value) || 2000)));
+    yrInput.value = String(clampedY);
+    commitDateInputs();
+  });
+
+  row.appendChild(seg);
+  row.appendChild(previewStrip);
+  row.appendChild(dateGrid);
+  row.appendChild(nightTip);
+  card.appendChild(row);
+  sec.appendChild(card);
+
+  refreshMoonUi();
+  return sec;
 }
 
 function renderAll({ preserveScroll = true } = {}) {
@@ -733,6 +960,11 @@ function bindEvents() {
     }
   });
 
+  document.addEventListener('visibilitychange', () => {
+    if (!state.previewReady) return;
+    sendToPreview({ t: 'pause', v: document.hidden || state.manualPause, manual: true });
+  });
+
   if (hasHost) {
     window.chrome.webview.addEventListener('message', (ev) => {
       let msg = ev.data;
@@ -742,11 +974,19 @@ function bindEvents() {
       if (!msg || typeof msg !== 'object') return;
 
       switch (msg.t) {
+        case 'previewVis':
+          if (state.previewReady) {
+            sendToPreview({ t: 'pause', v: !msg.v || state.manualPause, manual: true });
+          }
+          break;
+
         case 'init': {
           const prevTheme = state.themeId;
           state.hostInitialized = true;
           if (msg.theme) state.themeId = msg.theme;
           if (msg.lang) state.lang = msg.lang;
+          if (msg.moonMode) state.moonMode = msg.moonMode;
+          if (msg.moonDate) state.moonDate = msg.moonDate;
           if (msg.paramsByTheme) state.paramsByTheme = msg.paramsByTheme;
           state.autostart = !!msg.autostart;
           state.autopause = msg.autopause !== false;

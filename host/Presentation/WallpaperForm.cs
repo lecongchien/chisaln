@@ -85,10 +85,10 @@ namespace Scream.Presentation
             };
             Controls.Add(_webView);
 
-            _iconTimer = new Timer { Interval = 400 };
+            _iconTimer = new Timer { Interval = 650 };
             _iconTimer.Tick += (_, _) => PollIcons();
 
-            _fgTimer = new Timer { Interval = 500 };
+            _fgTimer = new Timer { Interval = 650 };
             _fgTimer.Tick += (_, _) => PollForeground();
         }
 
@@ -209,6 +209,12 @@ namespace Scream.Presentation
             PostJson(json);
         }
 
+        public void SendMoonConfig(string mode, string date)
+        {
+            string json = JsonSerializer.Serialize(new { t = "moon", mode, date });
+            PostJson(json);
+        }
+
         public void RequestSnapshot(Action<bool, string, string> callback)
         {
             _pendingShareCallback = callback;
@@ -246,6 +252,7 @@ namespace Scream.Presentation
                     case "ready":
                         _pageReady = true;
                         SendThemeSettings(_store.GetEffectiveParams(_store.Current.Theme));
+                        SendMoonConfig(_store.Current.MoonMode, _store.Current.MoonDate);
                         _lastIconsJson = "";
                         _lastPauseState = -1;
                         PollIcons();
@@ -320,6 +327,8 @@ namespace Scream.Presentation
             }
 
             if (!_pageReady || _webView.CoreWebView2 == null) return;
+            // Skip cross-process Explorer ReadProcessMemory polling when wallpaper is paused/covered
+            if (_lastPauseState == 1 && !string.IsNullOrEmpty(_lastIconsJson)) return;
 
             List<Native.RECT>? allRects = _iconReader.Read(out bool visible);
             if (allRects == null) return;

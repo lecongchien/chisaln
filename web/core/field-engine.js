@@ -348,14 +348,103 @@ export function sampleSeamlessNoise(tex, px, py, scale, seed, ch = 0) {
 }
 
 /**
- * Computes an optimal WebGL2 render DPR capping backbuffer pixels at crisp Full HD (~2.07M px)
- * on desktop and 1.0x inside the Settings preview iframe to guarantee silky 60 FPS on iGPUs.
+ * Computes an optimal WebGL2 render DPR capping backbuffer pixels cleanly for silky performance
+ * on both discrete GPUs and integrated laptop iGPUs, modulated by the adaptive qualityScale.
  */
-export function computeRenderDpr(W, H, isPreview = false) {
-  if (isPreview) return Math.min(1.0, window.devicePixelRatio || 1);
-  const raw = Math.min(1.5, window.devicePixelRatio || 1);
-  const maxPixels = 1920 * 1080;
+export function computeRenderDpr(W, H, isPreview = false, qualityScale = 1.0) {
+  const q = Math.max(0.62, Math.min(1.0, qualityScale || 1.0));
+  if (isPreview) {
+    return Math.max(0.60, Math.min(0.85, window.devicePixelRatio || 1) * q);
+  }
+  const raw = Math.min(1.25, window.devicePixelRatio || 1);
+  // Crisp ~1600x900 (1.44M px) base budget preserves painterly detail while saving ~31% GPU fillrate vs 1080p
+  const maxPixels = 1600 * 900;
   const curPixels = Math.max(1, W * H * raw * raw);
   const ratio = curPixels > maxPixels ? Math.sqrt(maxPixels / curPixels) : 1.0;
-  return Math.max(0.75, raw * ratio);
+  return Math.max(0.62, raw * ratio * q);
+}
+
+/**
+ * Shared Adaptive Frame Pacer & Dynamic Resolution Governor for all WebGL2 themes.
+ * - Immediately pauses rendering when document.hidden is true (0% GPU when minimized/hidden).
+ * - Uses VSync-aligned frame intervals to prevent 3:2 pulldown stutter on 60Hz monitors.
+ * - Monitors real rAF cadence and automatically steps down from 60 FPS -> locked even 30 FPS + DRS
+ *   whenever an iGPU drops frames, keeping Windows DWM & desktop apps buttery smooth.
+ * - Throttles Canvas2D -> GPU texSubImage2D uploads cleanly (~30 Hz desktop / ~20 Hz preview).
+ */
+export function createPerfGovernor({ isPreview = false, onQualityChange = null } = {}) {
+  // Tier 0: smooth 60 FPS @ 1.0x | Tier 1: locked 30 FPS @ 0.85x | Tier 2: locked 30 FPS @ 0.72x
+  const TIERS = isPreview
+    ? [{ interval: 31, scale: 1.0, uploadMs: 50 }]
+    : [
+        { interval: 14, scale: 1.00, uploadMs: 31 },
+        { interval: 29, scale: 0.85, uploadMs: 36 },
+        { interval: 31, scale: 0.72, uploadMs: 44 }
+      ];
+
+  let tier = 0;
+  let ewmaMs = 16.7;
+  let badStreak = 0;
+  let goodStreak = 0;
+  let lastUploadAt = -1e9;
+  let lastEvalAt = 0;
+
+  return {
+    get qualityScale() { return TIERS[tier].scale; },
+    get targetInterval() { return TIERS[tier].interval; },
+    get isHidden() { return typeof document !== 'undefined' && document.hidden; },
+
+    /** Call once per rendered frame with elapsed ms since previous rendered frame. */
+    reportFrame(elapsedMs, now) {
+      if (isPreview || TIERS.length <= 1) return;
+      if (!Number.isFinite(elapsedMs) || elapsedMs <= 2 || elapsedMs > 250) return;
+
+      ewmaMs = ewmaMs * 0.88 + elapsedMs * 0.12;
+      if (!lastEvalAt) { lastEvalAt = now; return; }
+      if (now - lastEvalAt < 400) return;
+      lastEvalAt = now;
+
+      // Demote quickly if GPU is missing target VSync deadline (causes visible stutter)
+      const demoteThresh = tier === 0 ? 22.5 : 41.0;
+      const promoteThresh = tier === 2 ? 33.5 : 33.2;
+
+      if (ewmaMs > demoteThresh && tier < TIERS.length - 1) {
+        badStreak++;
+        goodStreak = 0;
+        if (badStreak >= 3) {
+          tier++;
+          badStreak = 0;
+          ewmaMs = TIERS[tier].interval + 4;
+          onQualityChange?.(TIERS[tier].scale);
+        }
+      } else if (tier > 0 && ewmaMs < promoteThresh) {
+        goodStreak++;
+        badStreak = 0;
+        // Wide hysteresis (~12s steady headroom) so quality never oscillates
+        if (goodStreak >= 30 && tier === 2) {
+          tier--;
+          goodStreak = 0;
+          onQualityChange?.(TIERS[tier].scale);
+        }
+      } else {
+        badStreak = Math.max(0, badStreak - 1);
+        goodStreak = 0;
+      }
+    },
+
+    /** Returns true when a Canvas2D sprite layer should redraw & upload to GPU. */
+    shouldUpload2d(now, force = false) {
+      if (force || now - lastUploadAt >= TIERS[tier].uploadMs) {
+        lastUploadAt = now;
+        return true;
+      }
+      return false;
+    },
+
+    resetTiming() {
+      badStreak = 0;
+      goodStreak = 0;
+      lastEvalAt = 0;
+    }
+  };
 }

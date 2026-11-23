@@ -19,6 +19,7 @@ uniform sampler2D uNoise;
 uniform sampler2D uCastleTex;
 uniform sampler2D uFieldTex;
 uniform sampler2D uAlpsTex;
+uniform sampler2D uMoonTex;
 
 uniform vec2 uRes;
 uniform vec2 uGrid;
@@ -38,6 +39,7 @@ uniform float uSunOcc;
 uniform float uSunVis;
 uniform float uAlpsReady;
 uniform float uShowMeteors;
+uniform float uMoonPhase;   // 0=New, 0.25=First Qtr, 0.5=Full (100%), 0.75=Last Qtr
 uniform float uSeed;
 
 uniform vec4 uCastleRect;
@@ -538,25 +540,40 @@ void main() {
     float dOuter = rDist - mRad;
     float disc = ss(1.4, -1.2, dOuter);
 
-    // Wide atmospheric Mie corona + misty 22-degree lunar halo ring when thin clouds approach!
-    float innerCorona = exp(-max(dOuter, 0.0) / (mRad * 1.9)) * (0.34 + 0.24 * moonVis);
-    float outerAura   = exp(-max(dOuter, 0.0) / (mRad * 6.2)) * (0.14 + 0.10 * moonVis);
-    float veilRing    = exp(-sq((rDist - mRad * 2.35) / (mRad * 0.95))) * (0.04 + 0.15 * moonOcc);
+    float moonTheta = uMoonPhase * 6.2831853;
+    float moonIllum = 0.5 - 0.5 * cos(moonTheta);
+    float phaseGlow = mix(0.18, 1.0, pow(max(0.0001, moonIllum), 0.65));
+    vec2 mLocal = mp / max(1.0, mRad);
+    float rN = length(mLocal);
+    vec2 rotM = vec2(mLocal.x * 0.97 + mLocal.y * 0.24, -mLocal.x * 0.24 + mLocal.y * 0.97);
+    float lx = sin(moonTheta);
+    float lz = -cos(moonTheta);
+    float limbDir = mix(clamp(0.55 + 0.45 * (rotM.x / max(0.25, rN)) * lx, 0.18, 1.0), 1.0, moonIllum);
+    vec3 skyBeforeMoon = col;
+
+    // Wide atmospheric Mie corona + misty 22-degree lunar halo ring scaled naturally with Moon phase!
+    float innerCorona = exp(-max(dOuter, 0.0) / (mRad * 1.9)) * (0.34 + 0.24 * moonVis) * phaseGlow * limbDir;
+    float outerAura   = exp(-max(dOuter, 0.0) / (mRad * 6.2)) * (0.14 + 0.10 * moonVis) * phaseGlow;
+    float veilRing    = exp(-sq((rDist - mRad * 2.35) / (mRad * 0.95))) * (0.04 + 0.15 * moonOcc) * phaseGlow;
     col += vec3(0.62, 0.80, 0.98) * (innerCorona + outerAura) * night;
     col += vec3(0.76, 0.87, 0.98) * veilRing * night;
 
     if (disc > 0.002) {
-      // Painterly lunar maria (seas) + spherical limb darkening on the Full Moon
-      float rNorm = clamp(rDist / max(1.0, mRad), 0.0, 1.0);
-      float limb = pow(max(0.0001, 1.0 - rNorm * rNorm), 0.26);
-      float m1 = N(mp * 1.85 + vec2(23.0, 11.0), 190.0).r;
-      float m2 = N(mp * 3.40 + vec2(61.0, 39.0), 130.0).g;
-      float maria = ss(0.42, 0.74, m1 * 0.62 + m2 * 0.38);
-      vec3 moonBright = vec3(0.996, 0.984, 0.918);
-      vec3 moonMaria  = vec3(0.790, 0.840, 0.888);
-      vec3 moonCol = mix(moonBright, moonMaria, maria * 0.44) * mix(0.84, 1.04, limb);
-      // Warm luminous rim highlight
-      moonCol += vec3(0.08, 0.07, 0.03) * (1.0 - limb);
+      // Real Near-Side Lunar Surface (uMoonTex) + 3D spherical terminator relief + Earthshine!
+      float rClamped = min(1.0, rN);
+      float z3 = sqrt(max(0.0, 1.0 - rClamped * rClamped));
+      vec2 mUV = clamp(rotM * 0.480 + 0.5, 0.005, 0.995);
+      vec4 mTex = texture(uMoonTex, mUV);
+      float h0 = mTex.a;
+      float hx = texture(uMoonTex, clamp(mUV + vec2(0.0058, 0.0), 0.005, 0.995)).a;
+      float ndotlSmooth = rotM.x * lx + z3 * lz;
+      float litPhase = ss(-0.05, 0.16, ndotlSmooth + (h0 - 0.5) * 0.045);
+      float termBand = exp(-sq((ndotlSmooth - 0.14) / 0.316)) * litPhase;
+      float relief = clamp(1.0 + (h0 - hx) * lx * 4.2 * termBand, 0.78, 1.24);
+      float regolith = 0.94 + 0.12 * pow(max(0.0001, z3), 0.14);
+      vec3 moonLitCol = mTex.rgb * regolith * relief * vec3(1.03, 1.02, 0.97);
+      vec3 earthshine = skyBeforeMoon * 0.88 + mTex.rgb * vec3(0.060, 0.086, 0.132) + vec3(0.008, 0.015, 0.032);
+      vec3 moonCol = mix(earthshine, moonLitCol, litPhase);
       col = mix(col, moonCol, disc * night * 0.98);
     }
 

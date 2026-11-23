@@ -11,10 +11,12 @@ import {
   createFieldTexture,
   uploadFieldTexture,
   createSeamlessNoiseTexture,
-  computeRenderDpr
+  computeRenderDpr,
+  createPerfGovernor
 } from '../../core/field-engine.js';
 import { createHostBridge } from '../../core/host-bridge.js';
-import { SEATRAIN_FS } from './seatrain-shader.js';
+import { resolveMoonConfig, createMoonSurfaceLoader } from '../../core/moon-phase.js';
+import { SEATRAIN_FS, SEATRAIN_AURORA_FS } from './seatrain-shader.js';
 import { createSeaTrainController } from './seatrain-props.js';
 
 const DEFAULTS = {
@@ -53,6 +55,8 @@ if (!gl) {
 gl.getExtension('OES_texture_half_float_linear');
 
 const prog = createShaderProgram(gl, SEATRAIN_FS);
+const auroraProg = createShaderProgram(gl, SEATRAIN_AURORA_FS);
+
 const U = {
   uFA: gl.getUniformLocation(prog, 'uFA'),
   uFB: gl.getUniformLocation(prog, 'uFB'),
@@ -62,6 +66,8 @@ const U = {
   uStationTex: gl.getUniformLocation(prog, 'uStationTex'),
   uIslandTex: gl.getUniformLocation(prog, 'uIslandTex'),
   uCloudsTex: gl.getUniformLocation(prog, 'uCloudsTex'),
+  uAuroraTex: gl.getUniformLocation(prog, 'uAuroraTex'),
+  uMoonTex: gl.getUniformLocation(prog, 'uMoonTex'),
   uRes: gl.getUniformLocation(prog, 'uRes'),
   uGrid: gl.getUniformLocation(prog, 'uGrid'),
   uStep: gl.getUniformLocation(prog, 'uStep'),
@@ -82,6 +88,7 @@ const U = {
   uWake: gl.getUniformLocation(prog, 'uWake'),
   uShowStation: gl.getUniformLocation(prog, 'uShowStation'),
   uShowIsland: gl.getUniformLocation(prog, 'uShowIsland'),
+  uMoonPhase: gl.getUniformLocation(prog, 'uMoonPhase'),
   uSeed: gl.getUniformLocation(prog, 'uSeed'),
   uTrainRect: gl.getUniformLocation(prog, 'uTrainRect'),
   uStationRect: gl.getUniformLocation(prog, 'uStationRect'),
@@ -89,10 +96,26 @@ const U = {
   uPassRect: gl.getUniformLocation(prog, 'uPassRect')
 };
 
+const UA = {
+  uFA: gl.getUniformLocation(auroraProg, 'uFA'),
+  uFB: gl.getUniformLocation(auroraProg, 'uFB'),
+  uAuroraRes: gl.getUniformLocation(auroraProg, 'uAuroraRes'),
+  uCssRes: gl.getUniformLocation(auroraProg, 'uCssRes'),
+  uGrid: gl.getUniformLocation(auroraProg, 'uGrid'),
+  uStep: gl.getUniformLocation(auroraProg, 'uStep'),
+  uMix: gl.getUniformLocation(auroraProg, 'uMix'),
+  uTime: gl.getUniformLocation(auroraProg, 'uTime'),
+  uWindTime: gl.getUniformLocation(auroraProg, 'uWindTime'),
+  uWorldScroll: gl.getUniformLocation(auroraProg, 'uWorldScroll'),
+  uAdaptive: gl.getUniformLocation(auroraProg, 'uAdaptive'),
+  uNight: gl.getUniformLocation(auroraProg, 'uNight')
+};
+
 const field = new AdaptiveField(FIELD_STEP);
 const noiseTex = createSeamlessNoiseTexture(gl, 256);
 
 let texA = null, texB = null;
+let auroraFbo = null, auroraTex = null, auroraW = 1, auroraH = 1;
 let sdfA = null, sdfB = null;
 let activeIcons = [];
 let mixStart = 0, mixDuration = 540, curMix = 1.0;
@@ -102,8 +125,50 @@ const SCENE_SEED = 31.4;
 
 let simTime = 0, flowTime = 0, lastRaf = 0, lastDraw = 0;
 let sunsetMix = 1.0, nightMix = 0.0, moodInitialized = false;
+let moonCfg = { mode: 'full', date: '2000-08-15' };
+let moonPhase = 0.5;
+
+const perf = createPerfGovernor({
+  isPreview,
+  onQualityChange() {
+    resizeBackbuffer();
+  }
+});
+
+function allocAuroraFbo() {
+  const nw = Math.max(120, Math.round(glCanvas.width * 0.25));
+  const nh = Math.max(64, Math.round(glCanvas.height * 0.735 * 0.25));
+  if (auroraTex && nw === auroraW && nh === auroraH) return;
+  auroraW = nw;
+  auroraH = nh;
+  if (auroraTex) gl.deleteTexture(auroraTex);
+  if (auroraFbo) gl.deleteFramebuffer(auroraFbo);
+
+  auroraTex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, auroraTex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, auroraW, auroraH, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+
+  auroraFbo = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, auroraFbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, auroraTex, 0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+}
+
+function resizeBackbuffer() {
+  dpr = computeRenderDpr(W, H, isPreview, perf.qualityScale);
+  glCanvas.width = Math.max(1, Math.round(W * dpr));
+  glCanvas.height = Math.max(1, Math.round(H * dpr));
+  allocAuroraFbo();
+}
 
 const trainCtrl = createSeaTrainController(gl, () => {
+  if (paused) renderFrame(simTime);
+});
+const moonSurface = createMoonSurfaceLoader(gl, () => {
   if (paused) renderFrame(simTime);
 });
 
@@ -134,10 +199,7 @@ function targetMoodFromClock() {
 function allocResources() {
   W = Math.max(1, window.innerWidth);
   H = Math.max(1, window.innerHeight);
-  dpr = computeRenderDpr(W, H, isPreview);
-
-  glCanvas.width = Math.round(W * dpr);
-  glCanvas.height = Math.round(H * dpr);
+  resizeBackbuffer();
 
   field.resize(W, H);
   if (texA) gl.deleteTexture(texA);
@@ -183,8 +245,39 @@ function commitField(animate = true) {
 }
 
 function renderFrame(t) {
-  gl.viewport(0, 0, glCanvas.width, glCanvas.height);
   gl.disable(gl.BLEND);
+
+  // Pass 1 (Night only): Quarter-res 3D Volumetric Aurora FBO (~40x fewer GPU ALU ops than full-res raymarching!)
+  if (nightMix > 0.015 && auroraFbo && auroraTex) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, auroraFbo);
+    gl.viewport(0, 0, auroraW, auroraH);
+    gl.useProgram(auroraProg);
+
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, texA);
+    gl.uniform1i(UA.uFA, 0);
+
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, texB);
+    gl.uniform1i(UA.uFB, 1);
+
+    gl.uniform2f(UA.uAuroraRes, auroraW, auroraH);
+    gl.uniform2f(UA.uCssRes, W, H);
+    gl.uniform2f(UA.uGrid, field.gw, field.gh);
+    gl.uniform1f(UA.uStep, field.step);
+    gl.uniform1f(UA.uMix, curMix);
+    gl.uniform1f(UA.uTime, t);
+    gl.uniform1f(UA.uWindTime, flowTime);
+    gl.uniform1f(UA.uWorldScroll, trainCtrl.worldScroll);
+    gl.uniform1f(UA.uAdaptive, P.adaptive);
+    gl.uniform1f(UA.uNight, nightMix);
+
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  }
+
+  // Pass 2: Main fullscreen Sea Railway composition sampling pre-rendered uAuroraTex in 1 tap!
+  gl.viewport(0, 0, glCanvas.width, glCanvas.height);
   gl.useProgram(prog);
 
   gl.activeTexture(gl.TEXTURE0);
@@ -219,6 +312,14 @@ function renderFrame(t) {
   gl.bindTexture(gl.TEXTURE_2D, trainCtrl.cloudsTexture);
   gl.uniform1i(U.uCloudsTex, 7);
 
+  gl.activeTexture(gl.TEXTURE8);
+  gl.bindTexture(gl.TEXTURE_2D, auroraTex);
+  gl.uniform1i(U.uAuroraTex, 8);
+
+  gl.activeTexture(gl.TEXTURE9);
+  gl.bindTexture(gl.TEXTURE_2D, moonSurface.texture);
+  gl.uniform1i(U.uMoonTex, 9);
+
   gl.uniform2f(U.uRes, glCanvas.width, glCanvas.height);
   gl.uniform2f(U.uGrid, field.gw, field.gh);
   gl.uniform1f(U.uStep, field.step);
@@ -239,6 +340,7 @@ function renderFrame(t) {
   gl.uniform1f(U.uWake, trainCtrl.wake);
   gl.uniform1f(U.uShowStation, P.showStation);
   gl.uniform1f(U.uShowIsland, P.showIsland);
+  gl.uniform1f(U.uMoonPhase, moonPhase);
   gl.uniform1f(U.uSeed, SCENE_SEED);
 
   const tr = trainCtrl.trainRect;
@@ -256,6 +358,12 @@ function renderFrame(t) {
 function tick(now) {
   requestAnimationFrame(tick);
 
+  if (perf.isHidden) {
+    lastRaf = 0;
+    perf.resetTiming();
+    return;
+  }
+
   const tgt = targetMoodFromClock();
   if (!moodInitialized) {
     sunsetMix = tgt.sunset;
@@ -265,15 +373,17 @@ function tick(now) {
   const moodChanging = Math.abs(tgt.sunset - sunsetMix) > 0.002 || Math.abs(tgt.night - nightMix) > 0.002;
   if (paused && !needsInitialSettle && !moodChanging) {
     lastRaf = 0;
+    perf.resetTiming();
     return;
   }
 
-  const targetInterval = isPreview ? 28 : 12;
-  if (!needsInitialSettle && lastDraw && now - lastDraw < targetInterval) return;
+  if (!needsInitialSettle && lastDraw && now - lastDraw < perf.targetInterval) return;
 
-  const dt = lastRaf ? Math.min(0.05, (now - lastRaf) / 1000) : 0.0167;
+  const elapsedMs = lastRaf ? (now - lastRaf) : 16.7;
+  const dt = lastRaf ? Math.min(0.05, elapsedMs / 1000) : 0.0167;
   lastRaf = now;
   lastDraw = now;
+  perf.reportFrame(elapsedMs, now);
 
   const k = Math.min(1, dt * 1.8);
   sunsetMix += (tgt.sunset - sunsetMix) * k;
@@ -332,6 +442,11 @@ const bridge = createHostBridge({
       curMix = 1.0;
       needsInitialSettle = true;
     }
+  },
+  onMoon(cfg) {
+    moonCfg = cfg;
+    moonPhase = resolveMoonConfig(moonCfg).phase;
+    if (paused) renderFrame(simTime);
   },
   getCanvases: () => ({ glCanvas, overlayCanvas: null }),
   renderNow: () => renderFrame(simTime)

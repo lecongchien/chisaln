@@ -12,9 +12,11 @@ import {
   uploadFieldTexture,
   createSeamlessNoiseTexture,
   sampleSeamlessNoise,
-  computeRenderDpr
+  computeRenderDpr,
+  createPerfGovernor
 } from '../../core/field-engine.js';
 import { createHostBridge } from '../../core/host-bridge.js';
+import { resolveMoonConfig, createMoonSurfaceLoader } from '../../core/moon-phase.js';
 import { createWindRibbonSystem } from '../meadow/meadow-wind.js';
 import { CASTLE_FS } from './castle-shader.js';
 import { createCastleWalker, ridgeYAt } from './castle-walker.js';
@@ -68,8 +70,10 @@ const U = {
   uCastleTex: gl.getUniformLocation(prog, 'uCastleTex'),
   uFieldTex: gl.getUniformLocation(prog, 'uFieldTex'),
   uAlpsTex: gl.getUniformLocation(prog, 'uAlpsTex'),
+  uMoonTex: gl.getUniformLocation(prog, 'uMoonTex'),
   uAlpsReady: gl.getUniformLocation(prog, 'uAlpsReady'),
   uShowMeteors: gl.getUniformLocation(prog, 'uShowMeteors'),
+  uMoonPhase: gl.getUniformLocation(prog, 'uMoonPhase'),
   uRes: gl.getUniformLocation(prog, 'uRes'),
   uGrid: gl.getUniformLocation(prog, 'uGrid'),
   uStep: gl.getUniformLocation(prog, 'uStep'),
@@ -127,12 +131,17 @@ const SCENE_SEED = 23.9;
 
 let simTime = 0, flowTime = 0, lastRaf = 0, lastDraw = 0;
 let sunsetMix = 0, nightMix = 0, moodInitialized = false;
+let moonCfg = { mode: 'full', date: '2000-08-15' };
+let moonPhase = 0.5;
 
 const castle = createCastleWalker(gl, () => {
   if (paused) renderFrame(simTime);
 });
 const flock = createAlpineFlock(gl, () => {
   if (paused) renderFrame(simTime);
+});
+const moonSurface = createMoonSurfaceLoader(gl, () => {
+  if (paused) renderFrame(simTime, false);
 });
 const breeze = createAlpineBreeze();
 const windRibbons = createWindRibbonSystem();
@@ -202,13 +211,24 @@ function computeSunOcclusion() {
   return { occ, vis: 1 - occ * 0.62 };
 }
 
+const perf = createPerfGovernor({
+  isPreview,
+  onQualityChange() {
+    dpr = computeRenderDpr(W, H, isPreview, perf.qualityScale);
+    glCanvas.width = Math.max(1, Math.round(W * dpr));
+    glCanvas.height = Math.max(1, Math.round(H * dpr));
+  }
+});
+
+let lastCastleRect = null;
+
 function allocResources() {
   W = Math.max(1, window.innerWidth);
   H = Math.max(1, window.innerHeight);
-  dpr = computeRenderDpr(W, H, isPreview);
+  dpr = computeRenderDpr(W, H, isPreview, perf.qualityScale);
 
-  glCanvas.width = Math.round(W * dpr);
-  glCanvas.height = Math.round(H * dpr);
+  glCanvas.width = Math.max(1, Math.round(W * dpr));
+  glCanvas.height = Math.max(1, Math.round(H * dpr));
 
   field.resize(W, H);
   if (texA) gl.deleteTexture(texA);
@@ -255,20 +275,23 @@ function commitField(animate = true) {
   if (paused) renderFrame(simTime);
 }
 
-function renderFrame(t) {
-  const castleRect = castle.renderAndUpload(t, {
-    W, H,
-    showCastle: P.showCastle,
-    speed: P.castleSpeed
-  });
-  flock.renderAndUpload(t, {
-    W, H,
-    flow: P.flow,
-    gust: breeze.gust,
-    sunset: sunsetMix,
-    night: nightMix,
-    breeze
-  });
+function renderFrame(t, upload2d = true) {
+  if (upload2d || !lastCastleRect) {
+    lastCastleRect = castle.renderAndUpload(t, {
+      W, H,
+      showCastle: P.showCastle,
+      speed: P.castleSpeed
+    });
+    flock.renderAndUpload(t, {
+      W, H,
+      flow: P.flow,
+      gust: breeze.gust,
+      sunset: sunsetMix,
+      night: nightMix,
+      breeze
+    });
+  }
+  const castleRect = lastCastleRect;
 
   gl.viewport(0, 0, glCanvas.width, glCanvas.height);
   gl.disable(gl.BLEND);
@@ -298,6 +321,10 @@ function renderFrame(t) {
   gl.bindTexture(gl.TEXTURE_2D, alpsTex);
   gl.uniform1i(U.uAlpsTex, 5);
 
+  gl.activeTexture(gl.TEXTURE6);
+  gl.bindTexture(gl.TEXTURE_2D, moonSurface.texture);
+  gl.uniform1i(U.uMoonTex, 6);
+
   gl.uniform2f(U.uRes, glCanvas.width, glCanvas.height);
   gl.uniform2f(U.uGrid, field.gw, field.gh);
   gl.uniform1f(U.uStep, field.step);
@@ -318,6 +345,7 @@ function renderFrame(t) {
   gl.uniform1f(U.uSunVis, sun.vis);
   gl.uniform1f(U.uAlpsReady, alpsReady);
   gl.uniform1f(U.uShowMeteors, P.showMeteors);
+  gl.uniform1f(U.uMoonPhase, moonPhase);
   gl.uniform1f(U.uSeed, SCENE_SEED);
 
   if (castleRect) {
@@ -336,8 +364,9 @@ function renderFrame(t) {
 
 function tick(now) {
   requestAnimationFrame(tick);
-  if (paused && !needsInitialSettle) {
+  if (perf.isHidden || (paused && !needsInitialSettle)) {
     lastRaf = 0;
+    perf.resetTiming();
     return;
   }
 
@@ -348,13 +377,13 @@ function tick(now) {
     moodInitialized = true;
   }
   const moodChanging = Math.abs(tgt.sunset - sunsetMix) > 0.002 || Math.abs(tgt.night - nightMix) > 0.002;
-  // Smooth vsync-aligned 60 FPS on desktop (zero dropped 60Hz frames); lighter 35 FPS in small preview iframe
-  const targetInterval = isPreview ? 28 : 12;
-  if (!needsInitialSettle && lastDraw && now - lastDraw < targetInterval) return;
+  if (!needsInitialSettle && lastDraw && now - lastDraw < perf.targetInterval) return;
 
-  const dt = lastRaf ? Math.min(0.05, (now - lastRaf) / 1000) : 0.0167;
+  const elapsedMs = lastRaf ? (now - lastRaf) : 16.7;
+  const dt = lastRaf ? Math.min(0.05, elapsedMs / 1000) : 0.0167;
   lastRaf = now;
   lastDraw = now;
+  perf.reportFrame(elapsedMs, now);
   simTime += dt;
   flowTime += dt * Math.max(0.05, P.flow);
 
@@ -385,7 +414,7 @@ function tick(now) {
   });
   windRibbons.step(dt, Math.max(0, P.flow) * (0.75 + breeze.gust * 0.50), W, H);
 
-  renderFrame(simTime);
+  renderFrame(simTime, perf.shouldUpload2d(now, needsInitialSettle));
   needsInitialSettle = false;
 }
 
@@ -423,6 +452,11 @@ const bridge = createHostBridge({
       curMix = 1.0;
       needsInitialSettle = true;
     }
+  },
+  onMoon(cfg) {
+    moonCfg = cfg;
+    moonPhase = resolveMoonConfig(moonCfg).phase;
+    if (paused) renderFrame(simTime, false);
   },
   getCanvases: () => ({ glCanvas, overlayCanvas: null }),
   renderNow: () => renderFrame(simTime)

@@ -285,6 +285,16 @@ namespace Scream.Application
                         _settingsForm?.SetDarkMode(isDark);
                         break;
 
+                    case "moon":
+                        string mMode = root.TryGetProperty("mode", out var mmModeEl) ? mmModeEl.GetString() ?? "full" : "full";
+                        string mDate = root.TryGetProperty("date", out var mmDateEl) ? mmDateEl.GetString() ?? "2000-08-15" : "2000-08-15";
+                        if (mMode != "full" && mMode != "today" && mMode != "birthday") mMode = "full";
+                        _store.Current.MoonMode = mMode;
+                        _store.Current.MoonDate = mDate;
+                        ScheduleSave();
+                        foreach (var wf in _wallpapers) wf.SendMoonConfig(mMode, mDate);
+                        break;
+
                     case "revealFile":
                         string pathToOpen = root.TryGetProperty("path", out var pEl) ? pEl.GetString() ?? "" : "";
                         if (!string.IsNullOrEmpty(pathToOpen) && File.Exists(pathToOpen))
@@ -316,6 +326,8 @@ namespace Scream.Application
                 t = "init",
                 theme = _store.Current.Theme,
                 lang = _store.Current.Lang,
+                moonMode = _store.Current.MoonMode,
+                moonDate = _store.Current.MoonDate,
                 paramsByTheme = allParams,
                 autostart = _store.IsAutoStartEnabled(),
                 autopause = _store.Current.AutoPause,

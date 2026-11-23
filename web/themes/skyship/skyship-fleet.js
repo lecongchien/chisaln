@@ -133,7 +133,7 @@ export function createSkyshipFleet(gl, onReady) {
   };
 
   function resize(W, H) {
-    const scale = Math.min(1.0, 1152 / Math.max(1, W));
+    const scale = Math.min(1.0, 800 / Math.max(1, W));
     const nw = Math.max(320, Math.round(W * scale));
     const nh = Math.max(180, Math.round(H * scale));
     if (canvas.width !== nw || canvas.height !== nh) {
