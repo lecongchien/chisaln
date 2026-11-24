@@ -23,21 +23,27 @@ import {
   uploadFieldTexture,
   createSeamlessNoiseTexture,
   computeRenderDpr,
-  createPerfGovernor
-} from '../../core/field-engine.js';
-import { createHostBridge } from '../../core/host-bridge.js';
-import { resolveMoonConfig, createMoonSurfaceLoader } from '../../core/moon-phase.js';
-import { SEATRAIN_FS, SEATRAIN_AURORA_FS } from './seatrain-shader.js';
-import { createSharedCloudsLoader, createSeaTrainController } from './seatrain-props.js';
-import { CABIN_FS } from '../cabin/cabin-shader.js';
-import { createCabinLivingEngine } from '../cabin/cabin-props.js';
+  createPerfGovernor,
+} from "../../core/field-engine.js";
+import { createHostBridge } from "../../core/host-bridge.js";
+import {
+  resolveMoonConfig,
+  createMoonSurfaceLoader,
+} from "../../core/moon-phase.js";
+import { SEATRAIN_FS, SEATRAIN_AURORA_FS } from "./seatrain-shader.js";
+import {
+  createSharedCloudsLoader,
+  createSeaTrainController,
+} from "./seatrain-props.js";
+import { CABIN_FS } from "../cabin/cabin-shader.js";
+import { createCabinLivingEngine } from "../cabin/cabin-props.js";
 
 const DEFAULTS = {
-  viewMode: 0,     // 0 = Exterior ("Ngoài tàu"), 1 = Inside Cabin ("Trong toa")
-  timeMode: 1,     // 0 = Day, 1 = Golden Sunset, 2 = Starlit Night, 3 = Auto
-  trainMode: 0,    // Exterior: 0 = Endless Glide, 1 = Station Stop, 2 = Docked Still
+  viewMode: 0, // 0 = Exterior ("Ngoài tàu"), 1 = Inside Cabin ("Trong toa")
+  timeMode: 1, // 0 = Day, 1 = Golden Sunset, 2 = Starlit Night, 3 = Auto
+  trainMode: 0, // Exterior: 0 = Endless Glide, 1 = Station Stop, 2 = Docked Still
   clouds: 0.85,
-  ripple: 0.30,
+  ripple: 0.3,
   flow: 1.0,
   showStation: 1,
   showIsland: 1,
@@ -52,136 +58,136 @@ const DEFAULTS = {
   // Shared Adaptive Desktop Icon SDF controls
   adaptive: 1,
   sigma: 72,
-  warp: 34
+  warp: 34,
 };
 const P = { ...DEFAULTS };
 
 const urlParams = new URLSearchParams(location.search);
-const isPreview = urlParams.get('preview') === '1';
-const initViewParam = urlParams.get('view');
+const isPreview = urlParams.get("preview") === "1";
+const initViewParam = urlParams.get("view");
 if (initViewParam !== null) {
   const v = Number(initViewParam);
   if (Number.isFinite(v) && (v === 0 || v === 1)) P.viewMode = v;
 }
-const initTimeParam = urlParams.get('time');
+const initTimeParam = urlParams.get("time");
 if (initTimeParam !== null) {
   const tm = Number(initTimeParam);
   if (Number.isFinite(tm) && tm >= 0 && tm <= 3) P.timeMode = tm;
 }
 
-const glCanvas = document.getElementById('gl');
-const demoContainer = document.getElementById('demo-icons');
+const glCanvas = document.getElementById("gl");
+const demoContainer = document.getElementById("demo-icons");
 
-const gl = glCanvas.getContext('webgl2', {
+const gl = glCanvas.getContext("webgl2", {
   antialias: false,
   alpha: false,
   depth: false,
   stencil: false,
   preserveDrawingBuffer: false,
-  powerPreference: 'default'
+  powerPreference: "default",
 });
 
 if (!gl) {
-  document.getElementById('nogl').style.display = 'grid';
-  throw new Error('WebGL2 unavailable');
+  document.getElementById("nogl").style.display = "grid";
+  throw new Error("WebGL2 unavailable");
 }
 
-gl.getExtension('OES_texture_half_float_linear');
+gl.getExtension("OES_texture_half_float_linear");
 
 function bindExteriorUniforms(program) {
   return {
-    uFA: gl.getUniformLocation(program, 'uFA'),
-    uFB: gl.getUniformLocation(program, 'uFB'),
-    uNoise: gl.getUniformLocation(program, 'uNoise'),
-    uTrainTex: gl.getUniformLocation(program, 'uTrainTex'),
-    uTrainWinTex: gl.getUniformLocation(program, 'uTrainWinTex'),
-    uStationTex: gl.getUniformLocation(program, 'uStationTex'),
-    uIslandTex: gl.getUniformLocation(program, 'uIslandTex'),
-    uCloudsTex: gl.getUniformLocation(program, 'uCloudsTex'),
-    uAuroraTex: gl.getUniformLocation(program, 'uAuroraTex'),
-    uMoonTex: gl.getUniformLocation(program, 'uMoonTex'),
-    uRes: gl.getUniformLocation(program, 'uRes'),
-    uGrid: gl.getUniformLocation(program, 'uGrid'),
-    uStep: gl.getUniformLocation(program, 'uStep'),
-    uDpr: gl.getUniformLocation(program, 'uDpr'),
-    uMix: gl.getUniformLocation(program, 'uMix'),
-    uTime: gl.getUniformLocation(program, 'uTime'),
-    uWindTime: gl.getUniformLocation(program, 'uWindTime'),
-    uWorldScroll: gl.getUniformLocation(program, 'uWorldScroll'),
-    uAdaptive: gl.getUniformLocation(program, 'uAdaptive'),
-    uClouds: gl.getUniformLocation(program, 'uClouds'),
-    uRipple: gl.getUniformLocation(program, 'uRipple'),
-    uSunset: gl.getUniformLocation(program, 'uSunset'),
-    uNight: gl.getUniformLocation(program, 'uNight'),
-    uTrainReady: gl.getUniformLocation(program, 'uTrainReady'),
-    uStationReady: gl.getUniformLocation(program, 'uStationReady'),
-    uIslandReady: gl.getUniformLocation(program, 'uIslandReady'),
-    uCloudsReady: gl.getUniformLocation(program, 'uCloudsReady'),
-    uWake: gl.getUniformLocation(program, 'uWake'),
-    uShowStation: gl.getUniformLocation(program, 'uShowStation'),
-    uShowIsland: gl.getUniformLocation(program, 'uShowIsland'),
-    uMoonPhase: gl.getUniformLocation(program, 'uMoonPhase'),
-    uSeed: gl.getUniformLocation(program, 'uSeed'),
-    uTrainRect: gl.getUniformLocation(program, 'uTrainRect'),
-    uStationRect: gl.getUniformLocation(program, 'uStationRect'),
-    uIslandRect: gl.getUniformLocation(program, 'uIslandRect'),
-    uPassRect: gl.getUniformLocation(program, 'uPassRect')
+    uFA: gl.getUniformLocation(program, "uFA"),
+    uFB: gl.getUniformLocation(program, "uFB"),
+    uNoise: gl.getUniformLocation(program, "uNoise"),
+    uTrainTex: gl.getUniformLocation(program, "uTrainTex"),
+    uTrainWinTex: gl.getUniformLocation(program, "uTrainWinTex"),
+    uStationTex: gl.getUniformLocation(program, "uStationTex"),
+    uIslandTex: gl.getUniformLocation(program, "uIslandTex"),
+    uCloudsTex: gl.getUniformLocation(program, "uCloudsTex"),
+    uAuroraTex: gl.getUniformLocation(program, "uAuroraTex"),
+    uMoonTex: gl.getUniformLocation(program, "uMoonTex"),
+    uRes: gl.getUniformLocation(program, "uRes"),
+    uGrid: gl.getUniformLocation(program, "uGrid"),
+    uStep: gl.getUniformLocation(program, "uStep"),
+    uDpr: gl.getUniformLocation(program, "uDpr"),
+    uMix: gl.getUniformLocation(program, "uMix"),
+    uTime: gl.getUniformLocation(program, "uTime"),
+    uWindTime: gl.getUniformLocation(program, "uWindTime"),
+    uWorldScroll: gl.getUniformLocation(program, "uWorldScroll"),
+    uAdaptive: gl.getUniformLocation(program, "uAdaptive"),
+    uClouds: gl.getUniformLocation(program, "uClouds"),
+    uRipple: gl.getUniformLocation(program, "uRipple"),
+    uSunset: gl.getUniformLocation(program, "uSunset"),
+    uNight: gl.getUniformLocation(program, "uNight"),
+    uTrainReady: gl.getUniformLocation(program, "uTrainReady"),
+    uStationReady: gl.getUniformLocation(program, "uStationReady"),
+    uIslandReady: gl.getUniformLocation(program, "uIslandReady"),
+    uCloudsReady: gl.getUniformLocation(program, "uCloudsReady"),
+    uWake: gl.getUniformLocation(program, "uWake"),
+    uShowStation: gl.getUniformLocation(program, "uShowStation"),
+    uShowIsland: gl.getUniformLocation(program, "uShowIsland"),
+    uMoonPhase: gl.getUniformLocation(program, "uMoonPhase"),
+    uSeed: gl.getUniformLocation(program, "uSeed"),
+    uTrainRect: gl.getUniformLocation(program, "uTrainRect"),
+    uStationRect: gl.getUniformLocation(program, "uStationRect"),
+    uIslandRect: gl.getUniformLocation(program, "uIslandRect"),
+    uPassRect: gl.getUniformLocation(program, "uPassRect"),
   };
 }
 
 function bindAuroraUniforms(program) {
   return {
-    uFA: gl.getUniformLocation(program, 'uFA'),
-    uFB: gl.getUniformLocation(program, 'uFB'),
-    uAuroraRes: gl.getUniformLocation(program, 'uAuroraRes'),
-    uCssRes: gl.getUniformLocation(program, 'uCssRes'),
-    uGrid: gl.getUniformLocation(program, 'uGrid'),
-    uStep: gl.getUniformLocation(program, 'uStep'),
-    uMix: gl.getUniformLocation(program, 'uMix'),
-    uTime: gl.getUniformLocation(program, 'uTime'),
-    uWindTime: gl.getUniformLocation(program, 'uWindTime'),
-    uWorldScroll: gl.getUniformLocation(program, 'uWorldScroll'),
-    uAdaptive: gl.getUniformLocation(program, 'uAdaptive'),
-    uNight: gl.getUniformLocation(program, 'uNight')
+    uFA: gl.getUniformLocation(program, "uFA"),
+    uFB: gl.getUniformLocation(program, "uFB"),
+    uAuroraRes: gl.getUniformLocation(program, "uAuroraRes"),
+    uCssRes: gl.getUniformLocation(program, "uCssRes"),
+    uGrid: gl.getUniformLocation(program, "uGrid"),
+    uStep: gl.getUniformLocation(program, "uStep"),
+    uMix: gl.getUniformLocation(program, "uMix"),
+    uTime: gl.getUniformLocation(program, "uTime"),
+    uWindTime: gl.getUniformLocation(program, "uWindTime"),
+    uWorldScroll: gl.getUniformLocation(program, "uWorldScroll"),
+    uAdaptive: gl.getUniformLocation(program, "uAdaptive"),
+    uNight: gl.getUniformLocation(program, "uNight"),
   };
 }
 
 function bindCabinUniforms(program) {
   return {
-    uFA: gl.getUniformLocation(program, 'uFA'),
-    uFB: gl.getUniformLocation(program, 'uFB'),
-    uNoise: gl.getUniformLocation(program, 'uNoise'),
-    uCabinTex: gl.getUniformLocation(program, 'uCabinTex'),
-    uNoFaceTex: gl.getUniformLocation(program, 'uNoFaceTex'),
-    uLiveTex: gl.getUniformLocation(program, 'uLiveTex'),
-    uCloudsTex: gl.getUniformLocation(program, 'uCloudsTex'),
-    uMoonTex: gl.getUniformLocation(program, 'uMoonTex'),
-    uRes: gl.getUniformLocation(program, 'uRes'),
-    uGrid: gl.getUniformLocation(program, 'uGrid'),
-    uStep: gl.getUniformLocation(program, 'uStep'),
-    uDpr: gl.getUniformLocation(program, 'uDpr'),
-    uMix: gl.getUniformLocation(program, 'uMix'),
-    uTime: gl.getUniformLocation(program, 'uTime'),
-    uWindTime: gl.getUniformLocation(program, 'uWindTime'),
-    uWorldScroll: gl.getUniformLocation(program, 'uWorldScroll'),
-    uAdaptive: gl.getUniformLocation(program, 'uAdaptive'),
-    uSunset: gl.getUniformLocation(program, 'uSunset'),
-    uNight: gl.getUniformLocation(program, 'uNight'),
-    uMoonPhase: gl.getUniformLocation(program, 'uMoonPhase'),
-    uShowNoFace: gl.getUniformLocation(program, 'uShowNoFace'),
-    uShowPoles: gl.getUniformLocation(program, 'uShowPoles'),
-    uShowRain: gl.getUniformLocation(program, 'uShowRain'),
-    uCabinReady: gl.getUniformLocation(program, 'uCabinReady'),
-    uNoFaceReady: gl.getUniformLocation(program, 'uNoFaceReady'),
-    uCloudsReady: gl.getUniformLocation(program, 'uCloudsReady'),
-    uBobY: gl.getUniformLocation(program, 'uBobY'),
-    uSwayX: gl.getUniformLocation(program, 'uSwayX'),
-    uPassProgress: gl.getUniformLocation(program, 'uPassProgress'),
-    uPassFlash: gl.getUniformLocation(program, 'uPassFlash'),
-    uLampDip: gl.getUniformLocation(program, 'uLampDip'),
-    uParallax: gl.getUniformLocation(program, 'uParallax'),
-    uSeed: gl.getUniformLocation(program, 'uSeed'),
-    uNoFaceRect: gl.getUniformLocation(program, 'uNoFaceRect')
+    uFA: gl.getUniformLocation(program, "uFA"),
+    uFB: gl.getUniformLocation(program, "uFB"),
+    uNoise: gl.getUniformLocation(program, "uNoise"),
+    uCabinTex: gl.getUniformLocation(program, "uCabinTex"),
+    uNoFaceTex: gl.getUniformLocation(program, "uNoFaceTex"),
+    uLiveTex: gl.getUniformLocation(program, "uLiveTex"),
+    uCloudsTex: gl.getUniformLocation(program, "uCloudsTex"),
+    uMoonTex: gl.getUniformLocation(program, "uMoonTex"),
+    uRes: gl.getUniformLocation(program, "uRes"),
+    uGrid: gl.getUniformLocation(program, "uGrid"),
+    uStep: gl.getUniformLocation(program, "uStep"),
+    uDpr: gl.getUniformLocation(program, "uDpr"),
+    uMix: gl.getUniformLocation(program, "uMix"),
+    uTime: gl.getUniformLocation(program, "uTime"),
+    uWindTime: gl.getUniformLocation(program, "uWindTime"),
+    uWorldScroll: gl.getUniformLocation(program, "uWorldScroll"),
+    uAdaptive: gl.getUniformLocation(program, "uAdaptive"),
+    uSunset: gl.getUniformLocation(program, "uSunset"),
+    uNight: gl.getUniformLocation(program, "uNight"),
+    uMoonPhase: gl.getUniformLocation(program, "uMoonPhase"),
+    uShowNoFace: gl.getUniformLocation(program, "uShowNoFace"),
+    uShowPoles: gl.getUniformLocation(program, "uShowPoles"),
+    uShowRain: gl.getUniformLocation(program, "uShowRain"),
+    uCabinReady: gl.getUniformLocation(program, "uCabinReady"),
+    uNoFaceReady: gl.getUniformLocation(program, "uNoFaceReady"),
+    uCloudsReady: gl.getUniformLocation(program, "uCloudsReady"),
+    uBobY: gl.getUniformLocation(program, "uBobY"),
+    uSwayX: gl.getUniformLocation(program, "uSwayX"),
+    uPassProgress: gl.getUniformLocation(program, "uPassProgress"),
+    uPassFlash: gl.getUniformLocation(program, "uPassFlash"),
+    uLampDip: gl.getUniformLocation(program, "uLampDip"),
+    uParallax: gl.getUniformLocation(program, "uParallax"),
+    uSeed: gl.getUniformLocation(program, "uSeed"),
+    uNoFaceRect: gl.getUniformLocation(program, "uNoFaceRect"),
   };
 }
 
@@ -205,25 +211,41 @@ let lastCabinUploadMs = -1e9;
 const field = new AdaptiveField(FIELD_STEP);
 const noiseTex = createSeamlessNoiseTexture(gl, 256);
 
-let texA = null, texB = null;
-let auroraFbo = null, auroraTex = null, auroraW = 1, auroraH = 1;
-let sdfA = null, sdfB = null;
+let texA = null,
+  texB = null;
+let auroraFbo = null,
+  auroraTex = null,
+  auroraW = 1,
+  auroraH = 1;
+let sdfA = null,
+  sdfB = null;
 let activeIcons = [];
-let mixStart = 0, mixDuration = 540, curMix = 1.0;
-let W = 1, H = 1, dpr = 1;
-let paused = false, needsInitialSettle = true, readyNotified = false;
+let mixStart = 0,
+  mixDuration = 540,
+  curMix = 1.0;
+let W = 1,
+  H = 1,
+  dpr = 1;
+let paused = false,
+  needsInitialSettle = true,
+  readyNotified = false;
 const SCENE_SEED = 31.4;
 
-let simTime = 0, flowTime = 0, lastRaf = 0, lastDraw = 0;
-let sunsetMix = 1.0, nightMix = 0.0, moodInitialized = false;
-let moonCfg = { mode: 'full', date: '2000-08-15' };
+let simTime = 0,
+  flowTime = 0,
+  lastRaf = 0,
+  lastDraw = 0;
+let sunsetMix = 1.0,
+  nightMix = 0.0,
+  moodInitialized = false;
+let moonCfg = { mode: "full", date: "2000-08-15" };
 let moonPhase = 0.5;
 
 const perf = createPerfGovernor({
   isPreview,
   onQualityChange() {
     resizeBackbuffer();
-  }
+  },
 });
 
 const sharedClouds = createSharedCloudsLoader(gl, () => {
@@ -256,11 +278,27 @@ function allocAuroraFbo() {
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, auroraW, auroraH, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  gl.texImage2D(
+    gl.TEXTURE_2D,
+    0,
+    gl.RGBA,
+    auroraW,
+    auroraH,
+    0,
+    gl.RGBA,
+    gl.UNSIGNED_BYTE,
+    null,
+  );
 
   auroraFbo = gl.createFramebuffer();
   gl.bindFramebuffer(gl.FRAMEBUFFER, auroraFbo);
-  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, auroraTex, 0);
+  gl.framebufferTexture2D(
+    gl.FRAMEBUFFER,
+    gl.COLOR_ATTACHMENT0,
+    gl.TEXTURE_2D,
+    auroraTex,
+    0,
+  );
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 }
 
@@ -274,10 +312,18 @@ function ensureExteriorStarted(needAurora = needsNightAurora()) {
   if (!trainCtrl) {
     trainCtrl = createSeaTrainController(
       gl,
-      () => { if (paused && P.viewMode < 0.5) renderFrame(simTime); },
-      sharedClouds
+      () => {
+        if (paused && P.viewMode < 0.5) renderFrame(simTime);
+      },
+      sharedClouds,
     );
-    trainCtrl.step(0, { W, H, flow: P.flow, trainMode: P.trainMode, showPassing: P.showPassing });
+    trainCtrl.step(0, {
+      W,
+      H,
+      flow: P.flow,
+      trainMode: P.trainMode,
+      showPassing: P.showPassing,
+    });
   }
   if (!auroraTex) allocAuroraFbo();
 }
@@ -314,7 +360,7 @@ function ensureCabinStarted() {
         cabinOverlayDirty = true;
         if (paused && P.viewMode >= 0.5) renderFrame(simTime);
       },
-      sharedClouds
+      sharedClouds,
     );
     cabinCtrl.resize(W, H);
     cabinCtrl.step(0, { W, H, flow: P.flow, shake: P.shake });
@@ -356,7 +402,8 @@ function targetMoodFromClock() {
   const hr = now.getHours() + now.getMinutes() / 60 + now.getSeconds() / 3600;
   if (hr >= 19.25 || hr < 5.25) return { sunset: 0.0, night: 1.0 };
   if (hr >= 6.5 && hr < 16.75) return { sunset: 0.0, night: 0.0 };
-  if (hr >= 16.75 && hr < 18.0) return { sunset: sstep(16.75, 18.0, hr), night: 0.0 };
+  if (hr >= 16.75 && hr < 18.0)
+    return { sunset: sstep(16.75, 18.0, hr), night: 0.0 };
   if (hr >= 18.0 && hr < 19.25) {
     const k = sstep(18.0, 19.25, hr);
     return { sunset: 1.0 - k, night: k };
@@ -378,13 +425,20 @@ function allocResources() {
 
   const rects = P.adaptive >= 0.5 ? activeIcons : [];
   const initSdf = field.compute(rects, P.sigma, P.warp, 0.36);
-  sdfA = initSdf; sdfB = initSdf;
+  sdfA = initSdf;
+  sdfB = initSdf;
   uploadFieldTexture(gl, texA, field, sdfA);
   uploadFieldTexture(gl, texB, field, sdfB);
   curMix = 1.0;
 
   if (trainCtrl) {
-    trainCtrl.step(0, { W, H, flow: P.flow, trainMode: P.trainMode, showPassing: P.showPassing });
+    trainCtrl.step(0, {
+      W,
+      H,
+      flow: P.flow,
+      trainMode: P.trainMode,
+      showPassing: P.showPassing,
+    });
   }
   if (cabinCtrl) {
     cabinCtrl.resize(W, H);
@@ -398,15 +452,18 @@ function commitField(animate = true) {
   const rects = P.adaptive >= 0.5 ? activeIcons : [];
   const nextSdf = field.compute(rects, P.sigma, P.warp, 0.36);
   if (!animate || !sdfB) {
-    sdfA = nextSdf; sdfB = nextSdf;
+    sdfA = nextSdf;
+    sdfB = nextSdf;
     uploadFieldTexture(gl, texA, field, sdfA);
     uploadFieldTexture(gl, texB, field, sdfB);
     curMix = 1.0;
   } else {
     if (curMix < 0.99 && sdfA) {
       const blended = new Float32Array(sdfB.length);
-      const m = curMix, im = 1 - m;
-      for (let i = 0; i < blended.length; i++) blended[i] = sdfA[i] * im + sdfB[i] * m;
+      const m = curMix,
+        im = 1 - m;
+      for (let i = 0; i < blended.length; i++)
+        blended[i] = sdfA[i] * im + sdfB[i] * m;
       sdfA = blended;
     } else {
       sdfA = sdfB;
@@ -424,7 +481,11 @@ function renderCabinFrame(t, nowMs, forceSync = false) {
   if (!pollCabinReady(forceSync)) return false;
 
   const overlayInterval = perf.targetInterval <= 16 ? 15 : 31;
-  if (cabinOverlayDirty || perf.shouldUpload2d(nowMs, false) || (nowMs - lastCabinUploadMs >= overlayInterval)) {
+  if (
+    cabinOverlayDirty ||
+    perf.shouldUpload2d(nowMs, false) ||
+    nowMs - lastCabinUploadMs >= overlayInterval
+  ) {
     lastCabinUploadMs = nowMs;
     cabinCtrl.renderAndUpload({
       W,
@@ -433,7 +494,7 @@ function renderCabinFrame(t, nowMs, forceSync = false) {
       showDust: P.showDust,
       showNoFace: P.showNoFace,
       sunset: sunsetMix,
-      night: nightMix
+      night: nightMix,
     });
     cabinOverlayDirty = false;
   }
@@ -644,21 +705,25 @@ function tick(now) {
   }
 
   // Non-blocking parallel shader link polling: never freezes UI thread while ANGLE compiles in background!
-  const pipelineReady = (P.viewMode >= 0.5) ? pollCabinReady(false) : pollExteriorReady(false);
+  const pipelineReady =
+    P.viewMode >= 0.5 ? pollCabinReady(false) : pollExteriorReady(false);
   if (!pipelineReady) {
     return;
   }
 
-  const moodChanging = Math.abs(tgt.sunset - sunsetMix) > 0.002 || Math.abs(tgt.night - nightMix) > 0.002;
+  const moodChanging =
+    Math.abs(tgt.sunset - sunsetMix) > 0.002 ||
+    Math.abs(tgt.night - nightMix) > 0.002;
   if (paused && !needsInitialSettle && !moodChanging) {
     lastRaf = 0;
     perf.resetTiming();
     return;
   }
 
-  if (!needsInitialSettle && lastDraw && now - lastDraw < perf.targetInterval) return;
+  if (!needsInitialSettle && lastDraw && now - lastDraw < perf.targetInterval)
+    return;
 
-  const elapsedMs = lastRaf ? (now - lastRaf) : 16.7;
+  const elapsedMs = lastRaf ? now - lastRaf : 16.7;
   const dt = lastRaf ? Math.min(0.05, elapsedMs / 1000) : 0.0167;
   lastRaf = now;
   lastDraw = now;
@@ -666,9 +731,9 @@ function tick(now) {
 
   const k = Math.min(1, dt * 1.8);
   sunsetMix += (tgt.sunset - sunsetMix) * k;
-  nightMix  += (tgt.night  - nightMix)  * k;
+  nightMix += (tgt.night - nightMix) * k;
   if (Math.abs(tgt.sunset - sunsetMix) < 0.002) sunsetMix = tgt.sunset;
-  if (Math.abs(tgt.night  - nightMix)  < 0.002) nightMix  = tgt.night;
+  if (Math.abs(tgt.night - nightMix) < 0.002) nightMix = tgt.night;
 
   if (!paused || needsInitialSettle) {
     simTime += dt;
@@ -680,7 +745,13 @@ function tick(now) {
     if (P.viewMode >= 0.5) {
       cabinCtrl.step(dt, { W, H, flow: P.flow, shake: P.shake });
     } else {
-      trainCtrl.step(dt, { W, H, flow: P.flow, trainMode: P.trainMode, showPassing: P.showPassing });
+      trainCtrl.step(dt, {
+        W,
+        H,
+        flow: P.flow,
+        trainMode: P.trainMode,
+        showPassing: P.showPassing,
+      });
     }
   }
 
@@ -701,11 +772,11 @@ const bridge = createHostBridge({
       const num = Number(v);
       if (!Number.isFinite(num) || P[k] === num) continue;
       P[k] = num;
-      if (k === 'adaptive' || k === 'sigma' || k === 'warp') fieldDirty = true;
-      if (k === 'trainMode' && Math.round(num) === 2 && trainCtrl) {
+      if (k === "adaptive" || k === "sigma" || k === "warp") fieldDirty = true;
+      if (k === "trainMode" && Math.round(num) === 2 && trainCtrl) {
         trainCtrl.resetToStation();
       }
-      if (k === 'viewMode') {
+      if (k === "viewMode") {
         if (num >= 0.5) {
           ensureCabinStarted();
           cabinOverlayDirty = true;
@@ -714,10 +785,10 @@ const bridge = createHostBridge({
         }
         needsInitialSettle = true;
       }
-      if (k === 'showStraps' || k === 'showDust') {
+      if (k === "showStraps" || k === "showDust") {
         cabinOverlayDirty = true;
       }
-      if (k === 'timeMode') {
+      if (k === "timeMode") {
         if (P.viewMode < 0.5 && needsNightAurora()) {
           ensureExteriorStarted(true);
         }
@@ -762,7 +833,7 @@ const bridge = createHostBridge({
     if (cabinCtrl) cabinCtrl.setMouse(nx, ny);
   },
   getCanvases: () => ({ glCanvas, overlayCanvas: null }),
-  renderNow: () => renderFrame(simTime, performance.now(), true)
+  renderNow: () => renderFrame(simTime, performance.now(), true),
 });
 
 activeIcons = bridge.getIcons();
@@ -776,7 +847,7 @@ if (P.viewMode >= 0.5) {
   ensureExteriorStarted(needsNightAurora());
 }
 
-window.addEventListener('resize', () => {
+window.addEventListener("resize", () => {
   activeIcons = bridge.getIcons();
   allocResources();
   renderFrame(simTime);

@@ -1241,22 +1241,26 @@ void main() {
     float waveS = sin(logZSurf * 14.0 - uTime * 1.15 + nRip1 * 4.2);
 
     // Adaptive Icon Liquid Water Disturbance for icons below horizon:
+    // Strictly perspective-foreshortened HORIZONTAL liquid wavelets tucked cleanly under the icon footprint
+    // (ZERO vertical screen-space SDF iso-contour walls or cyan smudge arcs sticking out into empty water!)
     float iconRippleX = 0.0;
     float iconRippleY = 0.0;
     float iconShimmer = 0.0;
     if (uAdaptive >= 0.5) {
-      float horSmooth = ss(4.0, 46.0, depthPx);
+      float horSmooth = ss(6.0, 42.0, depthPx);
       if (horSmooth > 0.004) {
         float sdf = fieldS(p);
-        if (sdf < 48.0) {
-          float softBand = exp(-sq((sdf - 4.0) / 22.0)) * horSmooth;
-          float waveOsc = sin(sdf * 0.17 - uTime * 1.85 + nRip1 * 3.2);
-          float waterBreak = ss(0.30, 0.82, 0.50 + nRip1 * 0.72 + nRip2 * 0.58);
-          iconRippleX = waveOsc * softBand * 4.4;
-          iconRippleY = waveOsc * softBand * 1.1;
+        if (sdf < 18.0) {
+          // Soft interior footprint mask (peaks gently under icons, fades completely to 0 before empty open water!)
+          float footMask = ss(16.0, -34.0, sdf) * horSmooth;
+          float hWave = sin(logZSurf * 24.0 - uTime * 1.95 + nRip1 * 4.5);
+          float waterBreak = ss(0.42, 0.86, 0.50 + nRip1 * 0.72 + nRip2 * 0.58);
+          iconRippleX = hWave * footMask * 2.8;
+          iconRippleY = hWave * footMask * 0.65;
           vec2 lPos = primaryLightPos(cssRes, horizonY, sunset, night);
           float lightFace = 0.50 + 0.50 * clamp((lPos.x - p.x) / max(1.0, cssRes.x) + 0.5, 0.0, 1.0);
-          iconShimmer = max(0.0, waveOsc) * softBand * waterBreak * 0.14 * lightFace;
+          // Ultra-subtle broken horizontal wavelet sparkle strictly beneath icon labels (zero vertical streak!)
+          iconShimmer = max(0.0, hWave) * footMask * waterBreak * 0.048 * lightFace;
         }
       }
     }
