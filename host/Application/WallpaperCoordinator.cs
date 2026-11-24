@@ -95,6 +95,21 @@ namespace Scream.Application
             if (openSettingsOnLaunch) OpenSettings();
         }
 
+        private string BuildThemeQuery(string themeId)
+        {
+            var p = _store.GetEffectiveParams(themeId);
+            var sb = new System.Text.StringBuilder();
+            if (p.TryGetValue("viewMode", out double vm))
+            {
+                sb.Append("&view=").Append((int)Math.Round(vm));
+            }
+            if (p.TryGetValue("timeMode", out double tm))
+            {
+                sb.Append("&time=").Append((int)Math.Round(tm));
+            }
+            return sb.ToString();
+        }
+
         private void LaunchWallpapers()
         {
             DisposeWallpapers();
@@ -102,6 +117,7 @@ namespace Scream.Application
 
             var theme = _store.GetTheme(_store.Current.Theme);
             string page = theme?.Page ?? "beach.html";
+            string query = BuildThemeQuery(_store.Current.Theme);
             Screen[] targets = _store.Current.MultiMonitor
                 ? Screen.AllScreens
                 : new[] { Screen.PrimaryScreen ?? Screen.AllScreens[0] };
@@ -114,6 +130,7 @@ namespace Scream.Application
                     _webEnv,
                     scr,
                     page,
+                    query,
                     _manualPause,
                     _store.Current.AutoPause,
                     () => _settingsForm != null && !_settingsForm.IsDisposed ? _settingsForm.Handle : IntPtr.Zero);
@@ -129,6 +146,7 @@ namespace Scream.Application
                     };
                     wf.PauseStateChanged += _ => PushStatusToSettings();
                     wf.StatusChanged += _ => PushStatusToSettings();
+                    wf.PageReady += () => _settingsForm?.PostObject(new { t = "wallpaperReady", theme = _store.Current.Theme });
                     isFirst = false;
                 }
 
@@ -191,7 +209,8 @@ namespace Scream.Application
                         {
                             _store.Current.Theme = def.Id;
                             ScheduleSave();
-                            foreach (var wf in _wallpapers) wf.NavigateToPage(def.Page);
+                            string query = BuildThemeQuery(def.Id);
+                            foreach (var wf in _wallpapers) wf.NavigateToPage(def.Page, query);
                             SyncTrayState();
                             PushStatusToSettings();
                         }
@@ -336,6 +355,7 @@ namespace Scream.Application
                 paused = _wallpapers.Count > 0 && _wallpapers[0].IsPaused,
                 manualPause = _manualPause,
                 iconCount = _latestIconCount,
+                wallpaperReady = _wallpapers.Count == 0 || _wallpapers[0].IsPageReady,
                 attachMode = _wallpapers.Count > 0 ? _wallpapers[0].AttachMode : ""
             });
 
@@ -355,6 +375,7 @@ namespace Scream.Application
                 paused = _wallpapers.Count > 0 && _wallpapers[0].IsPaused,
                 manualPause = _manualPause,
                 iconCount = _latestIconCount,
+                wallpaperReady = _wallpapers.Count == 0 || _wallpapers[0].IsPageReady,
                 attachMode = _wallpapers.Count > 0 ? _wallpapers[0].AttachMode : ""
             });
         }

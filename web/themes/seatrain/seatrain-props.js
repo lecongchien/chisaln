@@ -21,51 +21,72 @@ function createEmptyTexture(gl, wrapS = gl.CLAMP_TO_EDGE) {
 function loadGpuTexture(gl, src, wrapS, onLoaded) {
   const tex = createEmptyTexture(gl, wrapS);
   const img = new Image();
+  img.decoding = 'async';
   img.onload = () => {
     gl.bindTexture(gl.TEXTURE_2D, tex);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
     onLoaded?.(img);
   };
+  img.onerror = () => {
+    if (img.src.endsWith('.webp')) img.src = src.replace(/\.webp$/, '.png');
+  };
   img.src = src;
   return tex;
 }
 
-export function createSeaTrainController(gl, onReady) {
+/**
+ * Lightweight shared seamless Ghibli cumulus cloud panorama texture used by both
+ * Exterior ("Ngoài tàu") and Cabin ("Trong toa") views so starting in Cabin mode never
+ * downloads unused exterior train/station/island sprites!
+ */
+export function createSharedCloudsLoader(gl, onReady) {
+  let cloudsReady = 0.0;
+  const cloudsTex = loadGpuTexture(gl, 'assets/seatrain-clouds.webp', gl.REPEAT, () => {
+    cloudsReady = 1.0;
+    onReady?.();
+  });
+  return {
+    cloudsTexture: cloudsTex,
+    get cloudsReady() { return cloudsReady; }
+  };
+}
+
+export function createSeaTrainController(gl, onReady, sharedClouds = null) {
   let trainReady = 0.0;
   let stationReady = 0.0;
   let islandReady = 0.0;
-  let cloudsReady = 0.0;
+  let localCloudsReady = 0.0;
 
   let trainAspect = 9.962;
   let stationAspect = 2.190;
   let islandAspect = 3.024;
 
-  const trainTex = loadGpuTexture(gl, 'assets/seatrain-train.png', gl.CLAMP_TO_EDGE, (img) => {
+  const trainTex = loadGpuTexture(gl, 'assets/seatrain-train.webp', gl.CLAMP_TO_EDGE, (img) => {
     if (img.naturalWidth > 0 && img.naturalHeight > 0) trainAspect = img.naturalWidth / img.naturalHeight;
     trainReady = 1.0;
     onReady?.();
   });
 
-  const winMaskTex = loadGpuTexture(gl, 'assets/seatrain-winmask.png', gl.CLAMP_TO_EDGE, () => {
+  const winMaskTex = loadGpuTexture(gl, 'assets/seatrain-winmask.webp', gl.CLAMP_TO_EDGE, () => {
     onReady?.();
   });
 
-  const stationTex = loadGpuTexture(gl, 'assets/seatrain-station.png', gl.CLAMP_TO_EDGE, (img) => {
+  const stationTex = loadGpuTexture(gl, 'assets/seatrain-station.webp', gl.CLAMP_TO_EDGE, (img) => {
     if (img.naturalWidth > 0 && img.naturalHeight > 0) stationAspect = img.naturalWidth / img.naturalHeight;
     stationReady = 1.0;
     onReady?.();
   });
 
-  const islandTex = loadGpuTexture(gl, 'assets/seatrain-island.png', gl.CLAMP_TO_EDGE, (img) => {
+  const islandTex = loadGpuTexture(gl, 'assets/seatrain-island.webp', gl.CLAMP_TO_EDGE, (img) => {
     if (img.naturalWidth > 0 && img.naturalHeight > 0) islandAspect = img.naturalWidth / img.naturalHeight;
     islandReady = 1.0;
     onReady?.();
   });
 
-  // Horizontally seamless panoramic Ghibli cumulus cloudscape (gl.REPEAT on S!)
-  const cloudsTex = loadGpuTexture(gl, 'assets/seatrain-clouds.png', gl.REPEAT, () => {
-    cloudsReady = 1.0;
+  // Horizontally seamless panoramic Ghibli cumulus cloudscape (reuses shared loader when provided!)
+  const cloudsTex = sharedClouds?.cloudsTexture || loadGpuTexture(gl, 'assets/seatrain-clouds.webp', gl.REPEAT, () => {
+    localCloudsReady = 1.0;
     onReady?.();
   });
 
@@ -237,7 +258,7 @@ export function createSeaTrainController(gl, onReady) {
     get trainReady() { return trainReady; },
     get stationReady() { return stationReady; },
     get islandReady() { return islandReady; },
-    get cloudsReady() { return cloudsReady; },
+    get cloudsReady() { return sharedClouds ? sharedClouds.cloudsReady : localCloudsReady; },
     get trainRect() { return state.trainRect; },
     get stationRect() { return state.stationRect; },
     get islandRect() { return state.islandRect; },

@@ -259,6 +259,59 @@ export function createShaderProgram(gl, fragSource, vertSource = FULLSCREEN_TRI_
   return prog;
 }
 
+/**
+ * Non-blocking parallel shader compilation via KHR_parallel_shader_compile (native in ANGLE/D3D11 WebView2).
+ * Dispatch one or more programs first so ANGLE compiles them concurrently across background CPU threads
+ * without freezing the UI thread, then poll pollShaderProgram() inside rAF (or pass forceSync=true).
+ */
+export function startShaderProgram(gl, fragSource, vertSource = FULLSCREEN_TRI_VS) {
+  const parallelExt = gl.getExtension('KHR_parallel_shader_compile');
+  const vs = gl.createShader(gl.VERTEX_SHADER);
+  gl.shaderSource(vs, vertSource);
+  gl.compileShader(vs);
+
+  const fs = gl.createShader(gl.FRAGMENT_SHADER);
+  gl.shaderSource(fs, fragSource);
+  gl.compileShader(fs);
+
+  const prog = gl.createProgram();
+  gl.attachShader(prog, vs);
+  gl.attachShader(prog, fs);
+  gl.linkProgram(prog);
+
+  return { prog, vs, fs, parallelExt, done: false, failed: false };
+}
+
+export function pollShaderProgram(gl, job, forceSync = false) {
+  if (!job) return null;
+  if (job.done) return job.failed ? null : job.prog;
+
+  if (!forceSync && job.parallelExt) {
+    if (!gl.getProgramParameter(job.prog, job.parallelExt.COMPLETION_STATUS_KHR)) {
+      return null;
+    }
+  }
+
+  job.done = true;
+  const linked = gl.getProgramParameter(job.prog, gl.LINK_STATUS);
+  if (!linked) {
+    const vsOk = gl.getShaderParameter(job.vs, gl.COMPILE_STATUS);
+    const fsOk = gl.getShaderParameter(job.fs, gl.COMPILE_STATUS);
+    const vsLog = vsOk ? '' : (gl.getShaderInfoLog(job.vs) || '');
+    const fsLog = fsOk ? '' : (gl.getShaderInfoLog(job.fs) || '');
+    const pLog = gl.getProgramInfoLog(job.prog) || '';
+    gl.deleteShader(job.vs);
+    gl.deleteShader(job.fs);
+    gl.deleteProgram(job.prog);
+    job.failed = true;
+    throw new Error(`Shader link error: ${pLog} ${fsLog} ${vsLog}`.trim());
+  }
+
+  gl.deleteShader(job.vs);
+  gl.deleteShader(job.fs);
+  return job.prog;
+}
+
 export function createFieldTexture(gl, gw, gh) {
   const tex = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D, tex);

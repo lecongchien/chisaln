@@ -672,6 +672,16 @@
                 "en": ["Hide", "Show"]
               },
               "default": 1
+            },
+            {
+              "key": "showRain",
+              "label": { "vi": "Mưa đêm trên kính", "en": "Rain on Train Glass" },
+              "hint": { "vi": "Giọt mưa lướt chéo theo tốc độ tàu trên mặt kính cửa sổ kèm hơi sương nhẹ", "en": "Wind-streaked raindrops sliding across the train windows with soft mist" },
+              "options": {
+                "vi": ["Tắt", "Bật"],
+                "en": ["Off", "On"]
+              },
+              "default": 1
             }
           ]
         },

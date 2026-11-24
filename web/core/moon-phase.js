@@ -170,6 +170,7 @@ export function createMoonSurfaceLoader(gl, onReady) {
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([220, 218, 206, 128]));
 
   const img = new Image();
+  img.decoding = 'async';
   img.onload = () => {
     gl.bindTexture(gl.TEXTURE_2D, tex);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
@@ -178,14 +179,17 @@ export function createMoonSurfaceLoader(gl, onReady) {
     ready = 1.0;
     onReady?.();
   };
-  img.src = 'assets/moon-surface.png';
+  img.onerror = () => {
+    if (img.src.endsWith('.webp')) img.src = 'assets/moon-surface.png';
+  };
+  img.src = 'assets/moon-surface.webp';
   return {
     texture: tex,
     get ready() { return ready; }
   };
 }
 
-// Cached CPU pixel buffer of assets/moon-surface.png for instant real-surface Settings mini-moon previews
+// Cached CPU pixel buffer of assets/moon-surface.webp for instant real-surface Settings mini-moon previews
 let _miniAtlasData = null;
 let _miniAtlasSize = 0;
 let _miniAtlasLoading = false;
@@ -197,6 +201,7 @@ function ensureMiniAtlasLoaded(cb) {
   if (_miniAtlasLoading) return false;
   _miniAtlasLoading = true;
   const img = new Image();
+  img.decoding = 'async';
   img.onload = () => {
     const s = 128;
     const c = document.createElement('canvas');
@@ -211,7 +216,10 @@ function ensureMiniAtlasLoaded(cb) {
       try { fn(); } catch { /* ignore */ }
     }
   };
-  img.src = './assets/moon-surface.png';
+  img.onerror = () => {
+    if (img.src.endsWith('.webp')) img.src = './assets/moon-surface.png';
+  };
+  img.src = './assets/moon-surface.webp';
   return false;
 }
 

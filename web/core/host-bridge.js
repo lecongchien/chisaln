@@ -153,6 +153,12 @@ export function createHostBridge(callbacks) {
         });
         break;
 
+      case 'mouse':
+        if (typeof msg.x === 'number' && typeof msg.y === 'number') {
+          callbacks.onMouse?.(msg.x, msg.y);
+        }
+        break;
+
       case 'snapshot':
         runSnapshotExport();
         break;
@@ -384,6 +390,24 @@ export function createHostBridge(callbacks) {
     window.chrome.webview.addEventListener('message', (ev) => handleIncoming(ev.data));
   }
   window.addEventListener('message', (ev) => handleIncoming(ev.data));
+  if (!isHost && typeof window.addEventListener === 'function') {
+    window.addEventListener('pointermove', (ev) => {
+      const w = Math.max(1, window.innerWidth);
+      const h = Math.max(1, window.innerHeight);
+      callbacks.onMouse?.(
+        Math.max(0, Math.min(1, ev.clientX / w)),
+        Math.max(0, Math.min(1, ev.clientY / h))
+      );
+    }, { passive: true });
+  }
+  window.addEventListener('error', (ev) => {
+    const msg = ev?.message || String(ev?.error || 'Script error');
+    postToHost({ t: 'sceneError', msg });
+  });
+  window.addEventListener('unhandledrejection', (ev) => {
+    const msg = ev?.reason?.message || String(ev?.reason || 'Unhandled promise rejection');
+    postToHost({ t: 'sceneError', msg });
+  });
 
   return {
     isHost,

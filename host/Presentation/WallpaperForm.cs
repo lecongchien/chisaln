@@ -23,24 +23,29 @@ namespace Scream.Presentation
         private readonly IconReader _iconReader = new();
         private readonly Timer _iconTimer;
         private readonly Timer _fgTimer;
+        private readonly Timer _mouseTimer;
 
         private Screen _targetScreen;
         private string _currentPage;
+        private string _currentQuery;
         private bool _manualPause;
         private bool _autoPauseEnabled;
         private bool _pageReady;
         private bool _shuttingDown;
         private string _lastIconsJson = "";
         private int _lastPauseState = -1;
+        private Point _lastMousePos = new(-9999, -9999);
         private Action<bool, string, string>? _pendingShareCallback;
 
         public event Action<string, int, bool>? IconsSnapshotUpdated;
         public event Action<bool>? PauseStateChanged;
         public event Action<string>? StatusChanged;
+        public event Action? PageReady;
 
         public Screen TargetScreen => _targetScreen;
         public string LastIconsJson => _lastIconsJson;
         public bool IsPaused => _lastPauseState == 1;
+        public bool IsPageReady => _pageReady;
         public string AttachMode => _attacher.ModeDescription;
 
         protected override bool ShowWithoutActivation => true;
@@ -60,6 +65,7 @@ namespace Scream.Presentation
             CoreWebView2Environment webEnv,
             Screen screen,
             string initialPage,
+            string initialQuery,
             bool manualPause,
             bool autoPauseEnabled,
             Func<IntPtr> getSettingsHwnd)
@@ -68,6 +74,7 @@ namespace Scream.Presentation
             _webEnv = webEnv;
             _targetScreen = screen;
             _currentPage = initialPage;
+            _currentQuery = initialQuery ?? "";
             _manualPause = manualPause;
             _autoPauseEnabled = autoPauseEnabled;
             _getSettingsHwnd = getSettingsHwnd;
@@ -90,6 +97,9 @@ namespace Scream.Presentation
 
             _fgTimer = new Timer { Interval = 650 };
             _fgTimer.Tick += (_, _) => PollForeground();
+
+            _mouseTimer = new Timer { Interval = 33 };
+            _mouseTimer.Tick += (_, _) => PollCursor();
         }
 
         protected override async void OnShown(EventArgs e)
@@ -141,26 +151,28 @@ namespace Scream.Presentation
                 }
             };
 
-            NavigateToPage(_currentPage);
+            NavigateToPage(_currentPage, _currentQuery);
             _iconTimer.Start();
             _fgTimer.Start();
+            _mouseTimer.Start();
         }
 
-        public void NavigateToPage(string page)
+        public void NavigateToPage(string page, string extraQuery = "")
         {
             _currentPage = page;
+            _currentQuery = extraQuery ?? "";
             _pageReady = false;
             _lastIconsJson = "";
             _lastPauseState = -1;
             if (_webView.CoreWebView2 != null)
             {
-                _webView.CoreWebView2.Navigate($"https://app.local/{page}?host=1");
+                _webView.CoreWebView2.Navigate($"https://app.local/{page}?host=1{_currentQuery}");
             }
         }
 
         public void ReloadPage()
         {
-            NavigateToPage(_currentPage);
+            NavigateToPage(_currentPage, _currentQuery);
         }
 
         public void UpdateScreenBounds(Screen newScreen)
@@ -257,6 +269,7 @@ namespace Scream.Presentation
                         _lastPauseState = -1;
                         PollIcons();
                         PollForeground();
+                        PageReady?.Invoke();
                         break;
 
                     case "snapshotResult":
@@ -391,6 +404,22 @@ namespace Scream.Presentation
             AppLog.Write(shouldPause ? $"Wallpaper paused ({reason})" : "Wallpaper resumed");
         }
 
+        private void PollCursor()
+        {
+            if (_shuttingDown || IsDisposed || !_pageReady || _lastPauseState == 1 || _webView.CoreWebView2 == null) return;
+            Point pt = Cursor.Position;
+            if (Math.Abs(pt.X - _lastMousePos.X) < 4 && Math.Abs(pt.Y - _lastMousePos.Y) < 4) return;
+            _lastMousePos = pt;
+
+            Rectangle b = _targetScreen.Bounds;
+            if (b.Width <= 0 || b.Height <= 0) return;
+            double nx = Math.Clamp((pt.X - b.Left) / (double)b.Width, 0.0, 1.0);
+            double ny = Math.Clamp((pt.Y - b.Top) / (double)b.Height, 0.0, 1.0);
+            PostJson(string.Create(
+                System.Globalization.CultureInfo.InvariantCulture,
+                $"{{\"t\":\"mouse\",\"x\":{nx:F4},\"y\":{ny:F4}}}"));
+        }
+
         public void Shutdown()
         {
             if (_shuttingDown) return;
@@ -398,6 +427,7 @@ namespace Scream.Presentation
 
             _iconTimer.Stop();
             _fgTimer.Stop();
+            _mouseTimer.Stop();
             _iconReader.Dispose();
 
             try { _webView.Dispose(); } catch { }
@@ -416,6 +446,7 @@ namespace Scream.Presentation
             {
                 _iconTimer.Dispose();
                 _fgTimer.Dispose();
+                _mouseTimer.Dispose();
                 _iconReader.Dispose();
                 _attacher.Dispose();
             }

@@ -46,7 +46,7 @@ namespace Scream.Infrastructure
             Native.SendMessageTimeout(
                 progman, Native.WM_SPAWN_WORKER,
                 new IntPtr(0xD), new IntPtr(1),
-                Native.SMTO_NORMAL, 1000, out _);
+                Native.SMTO_NORMAL, 300, out _);
 
             if (readyCheck()) return;
 
@@ -54,11 +54,11 @@ namespace Scream.Infrastructure
             Native.SendMessageTimeout(
                 progman, Native.WM_SPAWN_WORKER,
                 IntPtr.Zero, IntPtr.Zero,
-                Native.SMTO_NORMAL, 1000, out _);
+                Native.SMTO_NORMAL, 300, out _);
 
-            for (int i = 0; i < 20 && !readyCheck(); i++)
+            for (int i = 0; i < 12 && !readyCheck(); i++)
             {
-                Thread.Sleep(25);
+                Thread.Sleep(15);
             }
         }
 
@@ -76,15 +76,24 @@ namespace Scream.Infrastructure
             }
 
             IntPtr classicWorker = FindClassicWorker(progman);
-            if (classicWorker == IntPtr.Zero)
+            IntPtr defViewInProgman = Native.FindWindowEx(progman, IntPtr.Zero, "SHELLDLL_DefView", null);
+
+            // Fast-path Windows 11 24H2+ ("Raised Desktop"): Progman natively hosts SHELLDLL_DefView
+            // and system WorkerW children directly — skip blocking WM_SPAWN_WORKER + Thread.Sleep polling!
+            bool isWin11RaisedDesktop =
+                classicWorker == IntPtr.Zero &&
+                defViewInProgman != IntPtr.Zero &&
+                (Environment.OSVersion.Version.Build >= 26100 ||
+                 Native.FindWindowEx(progman, IntPtr.Zero, "WorkerW", null) != IntPtr.Zero);
+
+            if (classicWorker == IntPtr.Zero && !isWin11RaisedDesktop)
             {
                 RequestWorkerW(progman, () =>
                     FindClassicWorker(progman) != IntPtr.Zero ||
                     Native.FindWindowEx(progman, IntPtr.Zero, "WorkerW", null) != IntPtr.Zero);
                 classicWorker = FindClassicWorker(progman);
+                defViewInProgman = Native.FindWindowEx(progman, IntPtr.Zero, "SHELLDLL_DefView", null);
             }
-
-            IntPtr defViewInProgman = Native.FindWindowEx(progman, IntPtr.Zero, "SHELLDLL_DefView", null);
 
             if (classicWorker != IntPtr.Zero)
             {

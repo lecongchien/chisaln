@@ -31,7 +31,8 @@ const PARAM_DEPS = {
   showNoFace: { parent: 'viewMode', equals: 1, hide: true },
   showStraps: { parent: 'viewMode', equals: 1, hide: true },
   showPoles: { parent: 'viewMode', equals: 1, hide: true },
-  showDust: { parent: 'viewMode', equals: 1, hide: true }
+  showDust: { parent: 'viewMode', equals: 1, hide: true },
+  showRain: { parent: 'viewMode', equals: 1, hide: true }
 };
 
 const state = {
@@ -53,6 +54,8 @@ const state = {
   latestIconsMsg: null,
   previewReady: false,
   previewPage: '',
+  wallpaperReady: !hasHost,
+  pendingPreview: null,
   hostInitialized: false,
   exporting: false,
   lastResetSnapshot: null
@@ -221,8 +224,22 @@ function formatValue(param, val) {
   return String(Math.round(val));
 }
 
+let previewDeferTimer = null;
+
+function buildPreviewQuery(themeObj) {
+  const bag = ensureThemeParams(themeObj);
+  let q = '';
+  if (bag.viewMode !== undefined) q += `&view=${Math.round(Number(bag.viewMode) || 0)}`;
+  if (bag.timeMode !== undefined) q += `&time=${Math.round(Number(bag.timeMode) || 0)}`;
+  return q;
+}
+
 function loadPreviewForTheme(themeObj, forceReload = false) {
   if (!themeObj) return;
+  clearTimeout(previewDeferTimer);
+  previewDeferTimer = null;
+  state.pendingPreview = null;
+
   if (!forceReload && state.previewPage === themeObj.page) {
     if (state.previewReady) {
       el.previewLoading.classList.add('hidden');
@@ -233,8 +250,34 @@ function loadPreviewForTheme(themeObj, forceReload = false) {
   state.previewReady = false;
   state.previewPage = themeObj.page;
   el.previewLoading.classList.remove('hidden');
+  const q = buildPreviewQuery(themeObj);
   const bust = forceReload ? `&r=${Date.now()}` : '';
-  el.previewFrame.src = `${themeObj.page}?preview=1${bust}`;
+  el.previewFrame.src = `${themeObj.page}?preview=1${q}${bust}`;
+}
+
+/**
+ * Coordinates preview iframe startup with the desktop wallpaper so both do not fight
+ * over Chromium's single GPU shader compiler simultaneously. Once the desktop finishes
+ * compiling (and warms WebView2's shader disk cache), preview loads with near-instant cache hit!
+ */
+function schedulePreviewLoad(themeObj, { forceReload = false, waitDesktopMs = 0 } = {}) {
+  if (!themeObj) return;
+  if (forceReload || !hasHost || state.wallpaperReady || waitDesktopMs <= 0) {
+    loadPreviewForTheme(themeObj, forceReload);
+    return;
+  }
+  clearTimeout(previewDeferTimer);
+  state.pendingPreview = themeObj;
+  state.previewReady = false;
+  el.previewLoading.classList.remove('hidden');
+  previewDeferTimer = setTimeout(() => {
+    previewDeferTimer = null;
+    if (state.pendingPreview) {
+      const target = state.pendingPreview;
+      state.pendingPreview = null;
+      loadPreviewForTheme(target, false);
+    }
+  }, waitDesktopMs);
 }
 
 function syncPreviewState() {
@@ -444,9 +487,10 @@ function renderThemes() {
       if (state.themeId === theme.id) return;
       state.themeId = theme.id;
       state.lastResetSnapshot = null;
+      if (hasHost) state.wallpaperReady = false;
       sendToHost({ t: 'theme', id: theme.id });
       renderAll({ preserveScroll: false });
-      loadPreviewForTheme(theme);
+      schedulePreviewLoad(theme, { waitDesktopMs: hasHost ? 1200 : 0 });
     });
     el.themeGrid.appendChild(btn);
   }
@@ -989,6 +1033,8 @@ function bindEvents() {
       state.previewReady = true;
       el.previewLoading.classList.add('hidden');
       syncPreviewState();
+    } else if (msg && msg.t === 'sceneError') {
+      el.previewLoadingText.textContent = `Lỗi WebGL2: ${msg.msg || 'Unknown'}`;
     }
   });
 
@@ -1012,6 +1058,16 @@ function bindEvents() {
           }
           break;
 
+        case 'wallpaperReady': {
+          state.wallpaperReady = true;
+          if (state.pendingPreview) {
+            const target = state.pendingPreview;
+            state.pendingPreview = null;
+            loadPreviewForTheme(target, false);
+          }
+          break;
+        }
+
         case 'init': {
           const prevTheme = state.themeId;
           state.hostInitialized = true;
@@ -1026,12 +1082,13 @@ function bindEvents() {
           state.screenCount = msg.screenCount || 1;
           state.paused = !!msg.paused;
           state.manualPause = !!msg.manualPause;
+          state.wallpaperReady = msg.wallpaperReady !== false;
           if (typeof msg.iconCount === 'number') state.iconCount = msg.iconCount;
 
           renderAll({ preserveScroll: prevTheme === state.themeId });
           const themeObj = getThemeObj();
           if (themeObj && state.previewPage !== themeObj.page) {
-            loadPreviewForTheme(themeObj);
+            schedulePreviewLoad(themeObj, { waitDesktopMs: state.wallpaperReady ? 0 : 1800 });
           } else {
             syncPreviewState();
           }
