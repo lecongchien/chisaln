@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Scream Adaptive Wallpaper — macOS .app & .dmg Universal Packager (Apple Silicon + Intel)
-# Runs natively on any Mac with Xcode Command Line Tools (or on GitHub Actions macos-latest).
+# Scream Adaptive Wallpaper — macOS Universal Packager (.app, .pkg, .dmg, .zip)
+# Produces:
+#   1. Scream-v<ver>-macOS-Universal.pkg  (1-step macOS installer -> /Applications + auto-launch!)
+#   2. Scream-v<ver>-macOS-Universal.dmg  (drag-to-Applications disk image)
+#   3. Scream-v<ver>-macOS-Universal.zip  (consumed by 1-line install.sh)
+#
 # Usage:
-#   ./host-macos/scripts/package-dmg.sh           # Universal arm64 + x86_64 .app + .dmg
-#   ./host-macos/scripts/package-dmg.sh --local   # Fast single-arch build for current Mac
+#   ./host-macos/scripts/package-dmg.sh           # Universal arm64 + x86_64
+#   ./host-macos/scripts/package-dmg.sh --local   # Fast single-arch build on current Mac
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MAC_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -24,24 +28,23 @@ APP_VER="${APP_VER:-1.0.0}"
 SIGN_IDENTITY="${SIGN_IDENTITY:--}"
 
 echo "===================================================================="
-echo "  Scream Adaptive Wallpaper — macOS App & DMG Packager (v${APP_VER})"
+echo "  Scream Adaptive Wallpaper — macOS Packager (v${APP_VER})"
 echo "===================================================================="
 
 mkdir -p "${DIST_DIR}"
 APP_BUNDLE="${DIST_DIR}/${APP_NAME}.app"
 rm -rf "${APP_BUNDLE}"
 
-echo "[1/5] Compiling native Swift executable..."
+echo "[1/6] Compiling native Swift executable..."
 pushd "${MAC_DIR}" >/dev/null
 if [[ "${LOCAL_ONLY}" -eq 1 ]]; then
   swift build -c release
   BIN_PATH="$(swift build -c release --show-bin-path)/${APP_NAME}"
-  DMG_ARCH="local"
+  ARCH_TAG="local"
 else
   swift build -c release --arch arm64 --arch x86_64
   BIN_PATH="${MAC_DIR}/.build/apple/Products/Release/${APP_NAME}"
   if [[ ! -f "${BIN_PATH}" ]]; then
-    # Fallback manual lipo if SwiftPM places arch builds separately
     swift build -c release --arch arm64
     swift build -c release --arch x86_64
     mkdir -p "${MAC_DIR}/.build/universal"
@@ -51,19 +54,19 @@ else
       -output "${MAC_DIR}/.build/universal/${APP_NAME}"
     BIN_PATH="${MAC_DIR}/.build/universal/${APP_NAME}"
   fi
-  DMG_ARCH="Universal"
+  ARCH_TAG="Universal"
 fi
 popd >/dev/null
 
-echo "[2/5] Assembling ${APP_NAME}.app bundle..."
+echo "[2/6] Assembling ${APP_NAME}.app bundle..."
 mkdir -p "${APP_BUNDLE}/Contents/MacOS" "${APP_BUNDLE}/Contents/Resources/web"
 cp "${BIN_PATH}" "${APP_BUNDLE}/Contents/MacOS/${APP_NAME}"
 chmod +x "${APP_BUNDLE}/Contents/MacOS/${APP_NAME}"
 
-# Copy full shared web/ assets (excluding dev server script)
+# Copy shared web/ assets (excluding dev server script)
 rsync -a --delete --exclude='serve.mjs' "${ROOT_DIR}/web/" "${APP_BUNDLE}/Contents/Resources/web/"
 
-echo "[3/5] Generating macOS AppIcon.icns..."
+echo "[3/6] Generating macOS AppIcon.icns..."
 ICON_SRC="${MAC_DIR}/Resources/AppIcon-1024.png"
 if [[ -f "${ICON_SRC}" ]]; then
   ICONSET_DIR="$(mktemp -d)/AppIcon.iconset"
@@ -114,7 +117,7 @@ cat > "${APP_BUNDLE}/Contents/Info.plist" <<EOF
 </plist>
 EOF
 
-echo "[4/5] Signing ${APP_NAME}.app (${SIGN_IDENTITY})..."
+echo "[4/6] Signing ${APP_NAME}.app (${SIGN_IDENTITY})..."
 if [[ "${SIGN_IDENTITY}" == "-" ]]; then
   codesign --force --deep --sign - "${APP_BUNDLE}"
 else
@@ -122,9 +125,46 @@ else
 fi
 file "${APP_BUNDLE}/Contents/MacOS/${APP_NAME}"
 
-echo "[5/5] Creating drag-to-Applications DMG..."
-DMG_PATH="${DIST_DIR}/Scream-v${APP_VER}-macOS-${DMG_ARCH}.dmg"
-rm -f "${DMG_PATH}"
+echo "[5/6] Building 1-step auto-launch macOS Installer (.pkg)..."
+PKG_PATH="${DIST_DIR}/Scream-v${APP_VER}-macOS-${ARCH_TAG}.pkg"
+PKG_ROOT="$(mktemp -d)"
+PKG_SCRIPTS="$(mktemp -d)"
+mkdir -p "${PKG_ROOT}/Applications"
+cp -R "${APP_BUNDLE}" "${PKG_ROOT}/Applications/${APP_NAME}.app"
+
+cat > "${PKG_SCRIPTS}/preinstall" <<'PRE_EOF'
+#!/usr/bin/env bash
+pkill -x Scream >/dev/null 2>&1 || true
+exit 0
+PRE_EOF
+
+cat > "${PKG_SCRIPTS}/postinstall" <<'POST_EOF'
+#!/usr/bin/env bash
+CONSOLE_USER="$(stat -f%Su /dev/console || true)"
+if [[ -n "${CONSOLE_USER}" && "${CONSOLE_USER}" != "root" && -d "/Applications/Scream.app" ]]; then
+  su -l "${CONSOLE_USER}" -c 'open -a "/Applications/Scream.app"' >/dev/null 2>&1 || true
+fi
+exit 0
+POST_EOF
+
+chmod +x "${PKG_SCRIPTS}/preinstall" "${PKG_SCRIPTS}/postinstall"
+rm -f "${PKG_PATH}"
+pkgbuild \
+  --root "${PKG_ROOT}" \
+  --scripts "${PKG_SCRIPTS}" \
+  --identifier "${BUNDLE_ID}" \
+  --version "${APP_VER}" \
+  --install-location "/" \
+  "${PKG_PATH}" >/dev/null
+rm -rf "${PKG_ROOT}" "${PKG_SCRIPTS}"
+
+echo "[6/6] Building drag-to-Applications DMG and Portable ZIP..."
+DMG_PATH="${DIST_DIR}/Scream-v${APP_VER}-macOS-${ARCH_TAG}.dmg"
+ZIP_PATH="${DIST_DIR}/Scream-v${APP_VER}-macOS-${ARCH_TAG}.zip"
+rm -f "${DMG_PATH}" "${ZIP_PATH}"
+
+ditto -c -k --sequesterRsrc --keepParent "${APP_BUNDLE}" "${ZIP_PATH}"
+
 DMG_STAGE="$(mktemp -d)"
 cp -R "${APP_BUNDLE}" "${DMG_STAGE}/"
 ln -s /Applications "${DMG_STAGE}/Applications"
@@ -137,6 +177,7 @@ rm -rf "${DMG_STAGE}"
 
 echo "===================================================================="
 echo "  DONE! Ready to install on macOS:"
-echo "    App: ${APP_BUNDLE}"
+echo "    PKG: ${PKG_PATH} ($(du -h "${PKG_PATH}" | awk '{print $1}'))"
 echo "    DMG: ${DMG_PATH} ($(du -h "${DMG_PATH}" | awk '{print $1}'))"
+echo "    ZIP: ${ZIP_PATH} ($(du -h "${ZIP_PATH}" | awk '{print $1}'))"
 echo "===================================================================="

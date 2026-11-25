@@ -39,16 +39,19 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Build macOS Universal .app & .dmg (Apple Silicon + Intel)
+      - name: Build macOS Universal .pkg, .dmg & .zip (Apple Silicon + Intel)
         run: |
           chmod +x host-macos/scripts/package-dmg.sh
           ./host-macos/scripts/package-dmg.sh
 
-      - name: Upload macOS DMG artifact
+      - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
         with:
           name: scream-macos-universal
-          path: dist/Scream-v*-macOS-*.dmg
+          path: |
+            dist/Scream-v*-macOS-*.pkg
+            dist/Scream-v*-macOS-*.dmg
+            dist/Scream-v*-macOS-*.zip
 
   publish-release:
     needs: [build-windows, build-macos]
@@ -66,3 +69,4 @@ jobs:
         with:
           files: release-files/*
           generate_release_notes: true
+          fail_on_unmatched_files: false
