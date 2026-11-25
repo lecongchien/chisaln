@@ -402,7 +402,6 @@ void main() {
     }
   }
 
-  // Luminous Gouache 3D Spherical Moon Phase at Night + Earthshine + phase-reactive halo!
   // Real NASA-grade Near-Side Lunar Surface (uMoonTex) + 3D Spherical Phase + Earthshine + directional halo!
   if (night > 0.02) {
     float moonTheta = uMoonPhase * 6.2831853;
@@ -416,30 +415,16 @@ void main() {
     float dOuter = dMoon - mRad;
     float disc = ss(1.5, -1.2, dOuter);
 
-    float aureole = exp(-max(dOuter, 0.0) / (mRad * 1.15)) * (0.48 + 0.34 * moonVis) * phaseGlow;
     float limbDir = mix(clamp(0.55 + 0.45 * (rotM.x / max(0.25, rN)) * lx, 0.18, 1.0), 1.0, moonIllum);
     vec3 skyBeforeMoon = col;
     float aureole = exp(-max(dOuter, 0.0) / (mRad * 1.15)) * (0.48 + 0.34 * moonVis) * phaseGlow * limbDir;
     float corona  = exp(-max(dOuter, 0.0) / (mRad * 4.40)) * (0.20 + 0.16 * moonVis) * phaseGlow;
     float iceHalo = exp(-sq((dMoon - mRad * 2.85) / (mRad * 0.72))) * (0.04 + 0.18 * moonOcc) * phaseGlow;
-    col += vec3(0.95, 0.94, 0.86) * aureole * 0.48 * night;
     col += vec3(0.95, 0.94, 0.86) * aureole * 0.46 * night;
     col += vec3(0.52, 0.72, 0.96) * corona  * 0.74 * night;
     col += vec3(0.74, 0.86, 0.98) * iceHalo * night;
 
     if (disc > 0.002) {
-      vec2 mLocal = mp / max(1.0, mRad);
-      float rN = clamp(length(mLocal), 0.0, 1.0);
-      float z3 = sqrt(max(0.0, 1.0 - rN * rN));
-      vec2 rotM = vec2(mLocal.x * 0.97 + mLocal.y * 0.24, -mLocal.x * 0.24 + mLocal.y * 0.97);
-      vec3 lDir = vec3(sin(moonTheta), 0.0, -cos(moonTheta));
-      float litPhase = ss(-0.07, 0.14, dot(vec3(rotM.x, rotM.y, z3), lDir));
-      float limb = pow(max(0.0001, 1.0 - rN * rN), 0.30);
-      float m1 = N(mp * 1.85 + vec2(23.0, 11.0), 190.0).r;
-      float m2 = N(mp * 3.40 + vec2(61.0, 39.0), 130.0).g;
-      float maria = ss(0.42, 0.72, m1 * 0.62 + m2 * 0.38);
-      vec3 moonLitCol = mix(vec3(1.08, 1.05, 0.96), vec3(0.73, 0.79, 0.87), maria * 0.44) * mix(0.82, 1.06, limb);
-      vec3 earthshine = mix(col * 0.90 + vec3(0.016, 0.028, 0.056), moonLitCol * 0.10, 0.42);
       float rClamped = min(1.0, rN);
       float z3 = sqrt(max(0.0, 1.0 - rClamped * rClamped));
       vec2 mUV = clamp(rotM * 0.480 + 0.5, 0.005, 0.995);
