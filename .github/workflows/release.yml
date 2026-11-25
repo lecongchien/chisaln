@@ -1,0 +1,35 @@
+name: Release Windows x64 Installer & Portable
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Publish Portable ZIP & Inno Setup Installer
+        shell: cmd
+        run: publish.cmd
+
+      - name: Upload Release Artifacts to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/Scream-v*-Setup-x64.exe
+            dist/Scream-v*-Portable-x64.zip
+          generate_release_notes: true

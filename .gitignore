@@ -1,6 +1,7 @@
 # .NET / Visual Studio build outputs
 bin/
 obj/
+dist/
 .vs/
 *.user
 *.suo

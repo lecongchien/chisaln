@@ -12,8 +12,11 @@
     <AssemblyName>Scream</AssemblyName>
     <RootNamespace>Scream</RootNamespace>
     <ApplicationManifest>host\app.manifest</ApplicationManifest>
+    <ApplicationIcon>host\scream.ico</ApplicationIcon>
     <Version>1.0.0</Version>
     <Product>Scream Adaptive Wallpaper</Product>
+    <Company>Scream</Company>
+    <Description>Adaptive Studio Ghibli Live Wallpaper for Windows Desktop</Description>
   </PropertyGroup>
 
   <ItemGroup>
@@ -21,7 +24,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Content Include="web\**\*">
+    <Content Include="web\**\*" Exclude="web\serve.mjs">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
