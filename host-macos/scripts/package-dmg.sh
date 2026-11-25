@@ -23,9 +23,15 @@ fi
 
 APP_NAME="Scream"
 BUNDLE_ID="com.scream.wallpaper"
-APP_VER="$(grep -o '<Version>[^<]*</Version>' "${ROOT_DIR}/Scream.csproj" | head -n1 | sed -E 's/<\/?Version>//g' || true)"
+if [[ -n "${SCREAM_VERSION:-}" ]]; then
+  APP_VER="${SCREAM_VERSION#v}"
+else
+  APP_VER="$(grep -o '<Version>[^<]*</Version>' "${ROOT_DIR}/Scream.csproj" | head -n1 | sed -E 's/<\/?Version>//g' || true)"
+fi
 APP_VER="${APP_VER:-1.0.0}"
 SIGN_IDENTITY="${SIGN_IDENTITY:--}"
+UPDATE_REPO="${SCREAM_UPDATE_REPO:-lecongchien/chisaln-releases}"
+UPDATE_MANIFEST_URL="${SCREAM_UPDATE_MANIFEST_URL:-https://github.com/${UPDATE_REPO}/releases/latest/download/latest.json}"
 
 echo "===================================================================="
 echo "  Scream Adaptive Wallpaper — macOS Packager (v${APP_VER})"
@@ -113,6 +119,8 @@ cat > "${APP_BUNDLE}/Contents/Info.plist" <<EOF
   <true/>
   <key>NSAppleEventsUsageDescription</key>
   <string>Scream reads macOS Desktop icon positions from Finder so live wallpapers adapt smoothly around your icons.</string>
+  <key>ScreamUpdateManifestUrl</key>
+  <string>${UPDATE_MANIFEST_URL}</string>
 </dict>
 </plist>
 EOF
@@ -142,6 +150,7 @@ cat > "${PKG_SCRIPTS}/postinstall" <<'POST_EOF'
 #!/usr/bin/env bash
 CONSOLE_USER="$(stat -f%Su /dev/console || true)"
 if [[ -n "${CONSOLE_USER}" && "${CONSOLE_USER}" != "root" && -d "/Applications/Scream.app" ]]; then
+  chown -R "${CONSOLE_USER}" "/Applications/Scream.app" >/dev/null 2>&1 || true
   su -l "${CONSOLE_USER}" -c 'open -a "/Applications/Scream.app"' >/dev/null 2>&1 || true
 fi
 exit 0

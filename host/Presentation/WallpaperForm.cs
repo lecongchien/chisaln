@@ -227,6 +227,13 @@ namespace Scream.Presentation
             PostJson(json);
         }
 
+        public void SendRenderQuality(string quality)
+        {
+            string q = quality is "eco" or "balanced" or "ultra" ? quality : "ultra";
+            string json = JsonSerializer.Serialize(new { t = "quality", v = q });
+            PostJson(json);
+        }
+
         public void RequestSnapshot(Action<bool, string, string> callback)
         {
             _pendingShareCallback = callback;
@@ -265,6 +272,7 @@ namespace Scream.Presentation
                         _pageReady = true;
                         SendThemeSettings(_store.GetEffectiveParams(_store.Current.Theme));
                         SendMoonConfig(_store.Current.MoonMode, _store.Current.MoonDate);
+                        SendRenderQuality(_store.Current.RenderQuality);
                         _lastIconsJson = "";
                         _lastPauseState = -1;
                         PollIcons();

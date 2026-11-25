@@ -4,9 +4,11 @@ set -euo pipefail
 # Scream Adaptive Wallpaper — 1-Line macOS Installer (Apple Silicon + Intel)
 # Installs latest Scream.app from GitHub Releases directly into Applications and launches immediately.
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/lecongchien/chisaln/main/host-macos/scripts/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/lecongchien/chisaln-releases/main/install.sh | bash
+#   (or override with SCREAM_REPO="owner/repo")
 
-REPO="${SCREAM_REPO:-lecongchien/chisaln}"
+REPO="${SCREAM_REPO:-lecongchien/chisaln-releases}"
+MANIFEST_URL="https://github.com/${REPO}/releases/latest/download/latest.json"
 API_URL="https://api.github.com/repos/${REPO}/releases/latest"
 
 echo "===================================================================="
@@ -19,13 +21,19 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
 fi
 
 echo "[1/4] Fetching latest release from GitHub (${REPO})..."
-RELEASE_JSON="$(curl -fsSL "${API_URL}")" || {
-  echo "[ERROR] Could not reach GitHub Releases for ${REPO}."
-  echo "        Make sure a release tag (e.g. v1.0.0) has been published first."
-  exit 1
-}
-
-ZIP_URL="$(printf '%s' "${RELEASE_JSON}" | grep -oE 'https://[^"]+Scream-v[^"]*-macOS-[^"]*\.zip' | head -n1 || true)"
+ZIP_URL=""
+MANIFEST_JSON="$(curl -fsSL "${MANIFEST_URL}" 2>/dev/null || true)"
+if [[ -n "${MANIFEST_JSON}" ]]; then
+  ZIP_URL="$(printf '%s' "${MANIFEST_JSON}" | grep -oE 'https://[^"]+Scream-v[^"]*-macOS-[^"]*\.zip' | head -n1 || true)"
+fi
+if [[ -z "${ZIP_URL}" ]]; then
+  RELEASE_JSON="$(curl -fsSL "${API_URL}")" || {
+    echo "[ERROR] Could not reach GitHub Releases for ${REPO}."
+    echo "        Make sure a public release repo (${REPO}) has a published release tag (e.g. v1.0.1)."
+    exit 1
+  }
+  ZIP_URL="$(printf '%s' "${RELEASE_JSON}" | grep -oE 'https://[^"]+Scream-v[^"]*-macOS-[^"]*\.zip' | head -n1 || true)"
+fi
 if [[ -z "${ZIP_URL}" ]]; then
   echo "[ERROR] No macOS .zip asset found in the latest GitHub Release of ${REPO}."
   echo "        Wait for the 'Release Windows x64 & macOS Universal' Action to finish first."

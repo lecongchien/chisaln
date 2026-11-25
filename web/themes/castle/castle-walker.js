@@ -11,7 +11,7 @@ import { createSmokePlume } from './castle-smoke.js';
 
 const CASTLE_TEX_W = 720;
 const CASTLE_TEX_H = 640;
-const TEX_SCALE = 0.75; // 540x480 backing texture: 44% less per-frame GPU upload, zero visual loss!
+const TEX_SCALE = 1.0; // Full native 720x640 backing texture for razor-sharp castle linework
 const BACK_W = Math.round(CASTLE_TEX_W * TEX_SCALE);
 const BACK_H = Math.round(CASTLE_TEX_H * TEX_SCALE);
 const BODY_SIZE = 330;

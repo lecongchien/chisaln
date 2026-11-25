@@ -128,7 +128,7 @@
         <div class="inspector-bar">
           <div class="inspector-tabs" role="tablist" aria-label="Mục cài đặt">
             <button class="inspector-tab active" id="tab-btn-scene" type="button" role="tab" aria-selected="true" aria-controls="tab-panel-scene" data-tab="scene">Cảnh quan</button>
-            <button class="inspector-tab" id="tab-btn-system" type="button" role="tab" aria-selected="false" aria-controls="tab-panel-system" data-tab="system">Hệ thống</button>
+            <button class="inspector-tab" id="tab-btn-system" type="button" role="tab" aria-selected="false" aria-controls="tab-panel-system" data-tab="system"><span id="tab-btn-system-label">Hệ thống</span><span class="tab-update-dot" id="tab-update-dot" aria-hidden="true"></span></button>
           </div>
           <button class="btn ghost btn-compact" id="btn-reset" type="button">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><polyline points="3 3 3 8 8 8"/></svg>
@@ -166,6 +166,51 @@
                       <small id="hint-autostart">Chạy âm thầm dưới khay hệ thống khi mở máy</small>
                     </span>
                     <button class="toggle" id="tog-autostart" role="switch" aria-checked="false" aria-labelledby="lbl-autostart" type="button"></button>
+                  </div>
+                  <div class="param-row">
+                    <div class="param-top">
+                      <span class="param-label" id="lbl-quality">Độ nét hiển thị</span>
+                      <span class="param-val" id="val-quality">Sắc nét</span>
+                    </div>
+                    <div class="param-hint" id="hint-quality">Render đúng độ phân giải thật của màn hình (1080p / 2K / Retina) hoặc hạ nhẹ cho máy chạy pin</div>
+                    <div class="seg-control" id="quality-seg" role="radiogroup" aria-labelledby="lbl-quality" style="--cols: 3">
+                      <button type="button" data-quality="eco" aria-pressed="false">Tiết kiệm</button>
+                      <button type="button" data-quality="balanced" aria-pressed="false">Cân bằng</button>
+                      <button type="button" data-quality="ultra" aria-pressed="true" class="active">Sắc nét</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="param-group" id="update-group">
+                <div class="group-title" id="lbl-update-group">Cập nhật phần mềm</div>
+                <div class="group-card">
+                  <div class="switch-row">
+                    <span>
+                      <strong id="lbl-autoupdate">Tự động cập nhật</strong>
+                      <small id="hint-autoupdate">Tự tải ngầm và cài bản mới mỗi khi có phát hành</small>
+                    </span>
+                    <button class="toggle" id="tog-autoupdate" role="switch" aria-checked="true" aria-labelledby="lbl-autoupdate" type="button"></button>
+                  </div>
+                  <div class="update-card-row">
+                    <div class="update-row-top">
+                      <div class="update-copy">
+                        <div class="update-title-line">
+                          <span class="update-version" id="update-version">Scream v1.0.0</span>
+                          <span class="update-pill" id="update-pill" hidden></span>
+                        </div>
+                        <div class="update-detail" id="update-detail">Sẵn sàng kiểm tra bản cập nhật mới</div>
+                      </div>
+                      <button class="btn btn-compact" id="btn-update-action" type="button">
+                        <span class="btn-spinner" id="update-spinner" aria-hidden="true" hidden></span>
+                        <span id="btn-update-label">Kiểm tra</span>
+                      </button>
+                    </div>
+                    <div class="update-progress-wrap" id="update-progress-wrap" hidden>
+                      <div class="update-progress-track" id="update-progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                        <div class="update-progress-fill" id="update-progress-fill"></div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>

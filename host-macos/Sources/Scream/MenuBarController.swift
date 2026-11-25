@@ -11,13 +11,18 @@ final class MenuBarController: NSObject {
     private let itemPause: NSMenuItem
     private let itemReload: NSMenuItem
     private let itemMulti: NSMenuItem
+    private let itemUpdate: NSMenuItem
     private let itemQuit: NSMenuItem
+    private var updateState: String = "idle"
+    private var updateVersion: String = ""
+    private var updateProgress: Int = 0
 
     private let onOpenSettings: () -> Void
     private let onToggleNight: () -> Void
     private let onTogglePause: () -> Void
     private let onReload: () -> Void
     private let onToggleMultiMonitor: () -> Void
+    private let onUpdateAction: () -> Void
     private let onQuit: () -> Void
 
     init(
@@ -26,6 +31,7 @@ final class MenuBarController: NSObject {
         onTogglePause: @escaping () -> Void,
         onReload: @escaping () -> Void,
         onToggleMultiMonitor: @escaping () -> Void,
+        onUpdateAction: @escaping () -> Void,
         onQuit: @escaping () -> Void
     ) {
         self.onOpenSettings = onOpenSettings
@@ -33,6 +39,7 @@ final class MenuBarController: NSObject {
         self.onTogglePause = onTogglePause
         self.onReload = onReload
         self.onToggleMultiMonitor = onToggleMultiMonitor
+        self.onUpdateAction = onUpdateAction
         self.onQuit = onQuit
 
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -41,11 +48,12 @@ final class MenuBarController: NSObject {
         self.itemPause = NSMenuItem(title: "Tạm dừng hình nền", action: #selector(handlePause), keyEquivalent: "")
         self.itemReload = NSMenuItem(title: "Tải lại hình nền", action: #selector(handleReload), keyEquivalent: "")
         self.itemMulti = NSMenuItem(title: "Phủ tất cả màn hình", action: #selector(handleMulti), keyEquivalent: "")
+        self.itemUpdate = NSMenuItem(title: "Kiểm tra cập nhật…", action: #selector(handleUpdate), keyEquivalent: "")
         self.itemQuit = NSMenuItem(title: "Thoát Scream", action: #selector(handleQuit), keyEquivalent: "q")
 
         super.init()
 
-        for item in [itemOpen, itemNight, itemPause, itemReload, itemMulti, itemQuit] {
+        for item in [itemOpen, itemNight, itemPause, itemReload, itemMulti, itemUpdate, itemQuit] {
             item.target = self
         }
 
@@ -56,6 +64,7 @@ final class MenuBarController: NSObject {
         menu.addItem(itemReload)
         menu.addItem(itemMulti)
         menu.addItem(NSMenuItem.separator())
+        menu.addItem(itemUpdate)
         menu.addItem(itemQuit)
 
         if let btn = statusItem.button {
@@ -77,7 +86,36 @@ final class MenuBarController: NSObject {
         itemReload.title = en ? "Reload Wallpaper" : "Tải lại hình nền"
         itemMulti.title = en ? "Extend Across All Displays" : "Phủ tất cả màn hình"
         itemMulti.state = multiMonitor ? .on : .off
+        updateMenuLabel(en: en)
         itemQuit.title = en ? "Quit Scream" : "Thoát Scream"
+    }
+
+    func syncUpdateState(lang: String, state: String, latestVersion: String, progress: Int) {
+        updateState = state
+        updateVersion = latestVersion
+        updateProgress = progress
+        updateMenuLabel(en: lang == "en")
+    }
+
+    private func updateMenuLabel(en: Bool) {
+        let busy = updateState == "checking" || updateState == "installing"
+        itemUpdate.isEnabled = !busy
+        switch updateState {
+        case "checking":
+            itemUpdate.title = en ? "Checking for Updates…" : "Đang kiểm tra cập nhật…"
+        case "downloading":
+            itemUpdate.title = en
+                ? "Downloading v\(updateVersion) (\(updateProgress)%)…"
+                : "Đang tải v\(updateVersion) (\(updateProgress)%)…"
+        case "installing":
+            itemUpdate.title = en ? "Installing Update…" : "Đang cài đặt bản mới…"
+        case "available", "readyToInstall" where !updateVersion.isEmpty:
+            itemUpdate.title = en
+                ? "● Update to v\(updateVersion)…"
+                : "● Cập nhật lên v\(updateVersion)…"
+        default:
+            itemUpdate.title = en ? "Check for Updates…" : "Kiểm tra cập nhật…"
+        }
     }
 
     /// Crisp 18x18 template icon (crescent moon + ocean wave) adapting cleanly to macOS Light & Dark Menu Bar.
@@ -118,5 +156,6 @@ final class MenuBarController: NSObject {
     @objc private func handlePause() { onTogglePause() }
     @objc private func handleReload() { onReload() }
     @objc private func handleMulti() { onToggleMultiMonitor() }
+    @objc private func handleUpdate() { onUpdateAction() }
     @objc private func handleQuit() { onQuit() }
 }

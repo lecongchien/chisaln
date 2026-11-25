@@ -14,7 +14,11 @@ namespace Scream.Presentation
         private readonly ToolStripMenuItem _miPause;
         private readonly ToolStripMenuItem _miReload;
         private readonly ToolStripMenuItem _miMultiMonitor;
+        private readonly ToolStripMenuItem _miUpdate;
         private readonly ToolStripMenuItem _miExit;
+        private string _updateState = "idle";
+        private string _updateVersion = "";
+        private int _updateProgress;
 
         public TrayController(
             Icon appIcon,
@@ -24,6 +28,7 @@ namespace Scream.Presentation
             Action onTogglePause,
             Action onReload,
             Action onToggleMultiMonitor,
+            Action onUpdateAction,
             Action onExit)
         {
             _miSettings = new ToolStripMenuItem("Cài đặt & Xem trước (Ctrl+Alt+M)", null, (_, _) => onOpenSettings());
@@ -35,6 +40,7 @@ namespace Scream.Presentation
             {
                 Checked = initialMultiMonitor
             };
+            _miUpdate = new ToolStripMenuItem("Kiểm tra cập nhật…", null, (_, _) => onUpdateAction());
             _miExit = new ToolStripMenuItem("Thoát Scream", null, (_, _) => onExit());
 
             _trayMenu = new ContextMenuStrip();
@@ -47,6 +53,7 @@ namespace Scream.Presentation
                 _miReload,
                 _miMultiMonitor,
                 new ToolStripSeparator(),
+                _miUpdate,
                 _miExit
             });
 
@@ -74,8 +81,34 @@ namespace Scream.Presentation
             _miReload.Text = en ? "Reload Theme" : "Tải lại chủ đề";
             _miMultiMonitor.Text = en ? "Cover All Monitors" : "Phủ tất cả màn hình";
             _miMultiMonitor.Checked = multiMonitor;
+            UpdateMenuLabel(en);
             _miExit.Text = en ? "Exit Scream" : "Thoát Scream";
             _trayIcon.Text = en ? "Scream — Adaptive Wallpaper" : "Scream — Hình nền thích ứng";
+        }
+
+        public void SyncUpdateState(string lang, string state, string latestVersion, int progress)
+        {
+            _updateState = state ?? "idle";
+            _updateVersion = latestVersion ?? "";
+            _updateProgress = progress;
+            UpdateMenuLabel(lang == "en");
+        }
+
+        private void UpdateMenuLabel(bool en)
+        {
+            _miUpdate.Enabled = _updateState is not ("checking" or "installing");
+            _miUpdate.Text = _updateState switch
+            {
+                "checking" => en ? "Checking for Updates…" : "Đang kiểm tra cập nhật…",
+                "downloading" => en
+                    ? $"Downloading v{_updateVersion} ({_updateProgress}%)…"
+                    : $"Đang tải v{_updateVersion} ({_updateProgress}%)…",
+                "installing" => en ? "Installing Update…" : "Đang cài đặt bản mới…",
+                "available" or "readyToInstall" when !string.IsNullOrEmpty(_updateVersion) => en
+                    ? $"● Update to v{_updateVersion}…"
+                    : $"● Cập nhật lên v{_updateVersion}…",
+                _ => en ? "Check for Updates…" : "Kiểm tra cập nhật…"
+            };
         }
 
         public void Dispose()

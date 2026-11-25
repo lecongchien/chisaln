@@ -12,9 +12,22 @@ permissions:
 jobs:
   build-windows:
     runs-on: windows-latest
+    env:
+      RELEASE_REPO: ${{ vars.RELEASE_REPO || 'lecongchien/chisaln-releases' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Sync version from git tag (if tagged)
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $ver = "${{ github.ref_name }}".TrimStart('v')
+          $p = '.\Scream.csproj'
+          $c = [IO.File]::ReadAllText($p)
+          $c = [regex]::Replace($c, '<Version>[^<]*</Version>', "<Version>$ver</Version>", 1)
+          [IO.File]::WriteAllText($p, $c, (New-Object Text.UTF8Encoding($false)))
+          Write-Host "Synced Scream.csproj version to $ver"
 
       - name: Setup .NET 8 SDK
         uses: actions/setup-dotnet@v4
@@ -23,6 +36,8 @@ jobs:
 
       - name: Publish Windows Setup EXE & Portable ZIP
         shell: cmd
+        env:
+          SCREAM_UPDATE_REPO: ${{ env.RELEASE_REPO }}
         run: publish.cmd
 
       - name: Upload Windows artifacts
@@ -35,11 +50,22 @@ jobs:
 
   build-macos:
     runs-on: macos-latest
+    env:
+      RELEASE_REPO: ${{ vars.RELEASE_REPO || 'lecongchien/chisaln-releases' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Sync version from git tag (if tagged)
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          python3 -c "import pathlib, re; p=pathlib.Path('Scream.csproj'); p.write_text(re.sub(r'<Version>[^<]*</Version>', f'<Version>${VER}</Version>', p.read_text(encoding='utf-8'), count=1), encoding='utf-8')"
+          echo "Synced Scream.csproj version to ${VER}"
+
       - name: Build macOS Universal .pkg, .dmg & .zip (Apple Silicon + Intel)
+        env:
+          SCREAM_UPDATE_REPO: ${{ env.RELEASE_REPO }}
         run: |
           chmod +x host-macos/scripts/package-dmg.sh
           ./host-macos/scripts/package-dmg.sh
@@ -57,6 +83,8 @@ jobs:
     needs: [build-windows, build-macos]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    env:
+      RELEASE_REPO: ${{ vars.RELEASE_REPO || 'lecongchien/chisaln-releases' }}
     steps:
       - name: Download all platform installers
         uses: actions/download-artifact@v4
@@ -64,9 +92,122 @@ jobs:
           path: release-files
           merge-multiple: true
 
-      - name: Publish GitHub Release
+      - name: Generate SHA-256 checksums & auto-update latest.json manifest
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+          PUBLIC_REPO: ${{ env.RELEASE_REPO }}
+        run: |
+          python3 - <<'PY'
+          import datetime, hashlib, json, os, pathlib
+
+          tag = os.environ["TAG_NAME"]
+          version = tag.lstrip("v")
+          public_repo = os.environ["PUBLIC_REPO"]
+          base_url = f"https://github.com/{public_repo}/releases/download/{tag}"
+
+          files_dir = pathlib.Path("release-files")
+          files = sorted(
+              p for p in files_dir.iterdir()
+              if p.is_file() and p.name not in ("latest.json", "checksums.txt")
+          )
+
+          def sha256_file(path: pathlib.Path) -> str:
+              h = hashlib.sha256()
+              with path.open("rb") as f:
+                  for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                      h.update(chunk)
+              return h.hexdigest()
+
+          checksum_lines = []
+          meta = {}
+          for p in files:
+              digest = sha256_file(p)
+              size = p.stat().st_size
+              checksum_lines.append(f"{digest}  {p.name}")
+              meta[p.name] = {"sha256": digest, "size": size, "url": f"{base_url}/{p.name}"}
+
+          (files_dir / "checksums.txt").write_text("\n".join(checksum_lines) + "\n", encoding="utf-8")
+
+          def pick(suffix: str):
+              for name, info in meta.items():
+                  if name.endswith(suffix):
+                      return name, info
+              return None, None
+
+          _, win_setup = pick("-Setup-x64.exe")
+          _, win_port  = pick("-Portable-x64.zip")
+          _, mac_zip   = pick("-macOS-Universal.zip")
+          _, mac_pkg   = pick("-macOS-Universal.pkg")
+          _, mac_dmg   = pick("-macOS-Universal.dmg")
+
+          manifest = {
+              "version": version,
+              "tag": tag,
+              "publishedAt": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+              "windows": {
+                  "setupUrl": win_setup["url"] if win_setup else "",
+                  "setupSha256": win_setup["sha256"] if win_setup else "",
+                  "setupSize": win_setup["size"] if win_setup else 0,
+                  "portableUrl": win_port["url"] if win_port else "",
+                  "portableSha256": win_port["sha256"] if win_port else "",
+                  "portableSize": win_port["size"] if win_port else 0,
+              },
+              "macos": {
+                  "zipUrl": mac_zip["url"] if mac_zip else "",
+                  "zipSha256": mac_zip["sha256"] if mac_zip else "",
+                  "zipSize": mac_zip["size"] if mac_zip else 0,
+                  "pkgUrl": mac_pkg["url"] if mac_pkg else "",
+                  "pkgSha256": mac_pkg["sha256"] if mac_pkg else "",
+                  "dmgUrl": mac_dmg["url"] if mac_dmg else "",
+                  "dmgSha256": mac_dmg["sha256"] if mac_dmg else "",
+              },
+          }
+
+          manifest_path = files_dir / "latest.json"
+          manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+          print("Generated latest.json:\n" + manifest_path.read_text(encoding="utf-8"))
+          PY
+
+      - name: Publish internal GitHub Release (private repo)
         uses: softprops/action-gh-release@v2
         with:
           files: release-files/*
           generate_release_notes: true
+          make_latest: true
           fail_on_unmatched_files: false
+
+      - name: Check public release mirror token
+        id: mirror
+        env:
+          TOKEN: ${{ secrets.RELEASE_REPO_TOKEN }}
+        run: |
+          if [ -n "$TOKEN" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Mirror release & latest.json to public auto-update repo
+        if: steps.mirror.outputs.enabled == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          repository: ${{ env.RELEASE_REPO }}
+          token: ${{ secrets.RELEASE_REPO_TOKEN }}
+          tag_name: ${{ github.ref_name }}
+          name: "Scream ${{ github.ref_name }}"
+          body: "Automated release of Scream Adaptive Wallpaper ${{ github.ref_name }} for Windows x64 and macOS Universal."
+          files: release-files/*
+          make_latest: true
+          fail_on_unmatched_files: false
+
+      - name: Notice if public release mirror token is not configured yet
+        if: steps.mirror.outputs.enabled != 'true'
+        run: |
+          {
+            echo "### Public Auto-Update Mirror Not Configured Yet"
+            echo "Private release \`${{ github.ref_name }}\` succeeded, but \`secrets.RELEASE_REPO_TOKEN\` is not set."
+            echo "To enable zero-token auto-updates for installed Windows & macOS apps:"
+            echo "1. Create an empty **public** GitHub repo: \`${{ env.RELEASE_REPO }}\` (no source code)."
+            echo "2. Create a Fine-Grained Personal Access Token with \`Contents: Read and write\` scoped ONLY to \`${{ env.RELEASE_REPO }}\`."
+            echo "3. Add it as repository secret \`RELEASE_REPO_TOKEN\` in this private repo."
+          } >> "$GITHUB_STEP_SUMMARY"

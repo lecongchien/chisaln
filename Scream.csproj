@@ -17,7 +17,13 @@
     <Product>Scream Adaptive Wallpaper</Product>
     <Company>Scream</Company>
     <Description>Adaptive Studio Ghibli Live Wallpaper for Windows Desktop</Description>
+    <ScreamUpdateRepo Condition="'$(ScreamUpdateRepo)' == ''">lecongchien/chisaln-releases</ScreamUpdateRepo>
+    <ScreamUpdateManifestUrl Condition="'$(ScreamUpdateManifestUrl)' == ''">https://github.com/$(ScreamUpdateRepo)/releases/latest/download/latest.json</ScreamUpdateManifestUrl>
   </PropertyGroup>
+
+  <ItemGroup>
+    <AssemblyMetadata Include="ScreamUpdateManifestUrl" Value="$(ScreamUpdateManifestUrl)" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />

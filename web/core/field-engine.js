@@ -401,39 +401,117 @@ export function sampleSeamlessNoise(tex, px, py, scale, seed, ch = 0) {
 }
 
 /**
- * Computes an optimal WebGL2 render DPR capping backbuffer pixels cleanly for silky performance
- * on both discrete GPUs and integrated laptop iGPUs, modulated by the adaptive qualityScale.
+ * Render Quality Presets:
+ * - 'ultra'    : True native crispness up to 4K / 2x Retina (zero forced downscale, high-res 2D sprite layers).
+ * - 'balanced' : Crisp 1080p/2K native sharpness with smooth adaptive governor on iGPUs.
+ * - 'eco'      : Power-saving 900p / 30 FPS budget for thin-and-light laptops on battery.
+ */
+const QUALITY_PRESETS = {
+  ultra: {
+    maxDpr: 2.0,
+    maxPixels: 3840 * 2160,
+    previewMaxDpr: 1.6,
+    spriteMaxW: 1920,
+    tiers: [
+      { interval: 14, scale: 1.00, uploadMs: 28 },
+      { interval: 29, scale: 1.00, uploadMs: 33 }
+    ]
+  },
+  balanced: {
+    maxDpr: 1.5,
+    maxPixels: 2560 * 1440,
+    previewMaxDpr: 1.25,
+    spriteMaxW: 1440,
+    tiers: [
+      { interval: 14, scale: 1.00, uploadMs: 31 },
+      { interval: 29, scale: 0.92, uploadMs: 36 },
+      { interval: 31, scale: 0.80, uploadMs: 44 }
+    ]
+  },
+  eco: {
+    maxDpr: 1.15,
+    maxPixels: 1600 * 900,
+    previewMaxDpr: 1.0,
+    spriteMaxW: 960,
+    tiers: [
+      { interval: 29, scale: 1.00, uploadMs: 36 },
+      { interval: 31, scale: 0.80, uploadMs: 46 }
+    ]
+  }
+};
+
+function readInitialRenderQuality() {
+  try {
+    if (typeof window !== 'undefined' && window.location) {
+      const q = new URLSearchParams(window.location.search).get('q');
+      if (q === 'eco' || q === 'balanced' || q === 'ultra') return q;
+    }
+  } catch { /* ignore */ }
+  return 'ultra';
+}
+
+let activeRenderQuality = readInitialRenderQuality();
+const qualityListeners = new Set();
+
+export function getRenderQuality() {
+  return activeRenderQuality;
+}
+
+export function setRenderQuality(mode) {
+  const normalized = (mode === 'eco' || mode === 'balanced' || mode === 'ultra') ? mode : 'ultra';
+  if (normalized === activeRenderQuality) return false;
+  activeRenderQuality = normalized;
+  for (const fn of qualityListeners) {
+    try { fn(normalized); } catch { /* ignore */ }
+  }
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('resize'));
+  }
+  return true;
+}
+
+/**
+ * Returns the maximum backing width (px) for Canvas2D animated sprite layers
+ * scaled cleanly by the active Render Quality preset so foreground art stays sharp.
+ */
+export function getSpriteMaxWidth(preferredMax = 1920) {
+  const preset = QUALITY_PRESETS[activeRenderQuality] || QUALITY_PRESETS.ultra;
+  const dpr = (typeof window !== 'undefined' ? window.devicePixelRatio : 1) || 1;
+  const target = Math.round(preset.spriteMaxW * Math.min(1.25, Math.max(1.0, dpr * 0.75)));
+  return Math.max(800, Math.min(preferredMax, target));
+}
+
+/**
+ * Computes an optimal WebGL2 render DPR honoring the active Render Quality preset
+ * (native crispness on 1080p/2K/4K/Retina by default, never blurring preview below 1.0x).
  */
 export function computeRenderDpr(W, H, isPreview = false, qualityScale = 1.0) {
-  const q = Math.max(0.62, Math.min(1.0, qualityScale || 1.0));
+  const preset = QUALITY_PRESETS[activeRenderQuality] || QUALITY_PRESETS.ultra;
+  const q = Math.max(0.72, Math.min(1.0, qualityScale || 1.0));
+  const nativeDpr = Math.max(1.0, (typeof window !== 'undefined' ? window.devicePixelRatio : 1) || 1);
+
   if (isPreview) {
-    return Math.max(0.60, Math.min(0.85, window.devicePixelRatio || 1) * q);
+    return Math.max(1.0, Math.min(preset.previewMaxDpr, nativeDpr));
   }
-  const raw = Math.min(1.25, window.devicePixelRatio || 1);
-  // Crisp ~1600x900 (1.44M px) base budget preserves painterly detail while saving ~31% GPU fillrate vs 1080p
-  const maxPixels = 1600 * 900;
+
+  const raw = Math.min(preset.maxDpr, nativeDpr);
   const curPixels = Math.max(1, W * H * raw * raw);
-  const ratio = curPixels > maxPixels ? Math.sqrt(maxPixels / curPixels) : 1.0;
-  return Math.max(0.62, raw * ratio * q);
+  const ratio = curPixels > preset.maxPixels ? Math.sqrt(preset.maxPixels / curPixels) : 1.0;
+  return Math.max(0.72, raw * ratio * q);
 }
 
 /**
  * Shared Adaptive Frame Pacer & Dynamic Resolution Governor for all WebGL2 themes.
  * - Immediately pauses rendering when document.hidden is true (0% GPU when minimized/hidden).
  * - Uses VSync-aligned frame intervals to prevent 3:2 pulldown stutter on 60Hz monitors.
- * - Monitors real rAF cadence and automatically steps down from 60 FPS -> locked even 30 FPS + DRS
- *   whenever an iGPU drops frames, keeping Windows DWM & desktop apps buttery smooth.
- * - Throttles Canvas2D -> GPU texSubImage2D uploads cleanly (~30 Hz desktop / ~20 Hz preview).
+ * - Honors the active Render Quality preset ('ultra' preserves 100% sharpness without blurring).
+ * - Allows clean promotion back to Tier 0 after transient startup/load spikes subside.
  */
 export function createPerfGovernor({ isPreview = false, onQualityChange = null } = {}) {
-  // Tier 0: smooth 60 FPS @ 1.0x | Tier 1: locked 30 FPS @ 0.85x | Tier 2: locked 30 FPS @ 0.72x
-  const TIERS = isPreview
-    ? [{ interval: 31, scale: 1.0, uploadMs: 50 }]
-    : [
-        { interval: 14, scale: 1.00, uploadMs: 31 },
-        { interval: 29, scale: 0.85, uploadMs: 36 },
-        { interval: 31, scale: 0.72, uploadMs: 44 }
-      ];
+  const getTiers = () => {
+    if (isPreview) return [{ interval: 29, scale: 1.0, uploadMs: 40 }];
+    return (QUALITY_PRESETS[activeRenderQuality] || QUALITY_PRESETS.ultra).tiers;
+  };
 
   let tier = 0;
   let ewmaMs = 16.7;
@@ -441,43 +519,62 @@ export function createPerfGovernor({ isPreview = false, onQualityChange = null }
   let goodStreak = 0;
   let lastUploadAt = -1e9;
   let lastEvalAt = 0;
+  let demoteCooldownUntil = 0;
+
+  qualityListeners.add(() => {
+    tier = 0;
+    ewmaMs = 16.7;
+    badStreak = 0;
+    goodStreak = 0;
+    demoteCooldownUntil = 0;
+  });
 
   return {
-    get qualityScale() { return TIERS[tier].scale; },
-    get targetInterval() { return TIERS[tier].interval; },
+    get qualityScale() {
+      const tiers = getTiers();
+      return tiers[Math.min(tier, tiers.length - 1)].scale;
+    },
+    get targetInterval() {
+      const tiers = getTiers();
+      return tiers[Math.min(tier, tiers.length - 1)].interval;
+    },
     get isHidden() { return typeof document !== 'undefined' && document.hidden; },
 
     /** Call once per rendered frame with elapsed ms since previous rendered frame. */
     reportFrame(elapsedMs, now) {
-      if (isPreview || TIERS.length <= 1) return;
+      const tiers = getTiers();
+      if (isPreview || tiers.length <= 1) return;
       if (!Number.isFinite(elapsedMs) || elapsedMs <= 2 || elapsedMs > 250) return;
 
+      tier = Math.min(tier, tiers.length - 1);
       ewmaMs = ewmaMs * 0.88 + elapsedMs * 0.12;
       if (!lastEvalAt) { lastEvalAt = now; return; }
       if (now - lastEvalAt < 400) return;
       lastEvalAt = now;
 
-      // Demote quickly if GPU is missing target VSync deadline (causes visible stutter)
-      const demoteThresh = tier === 0 ? 22.5 : 41.0;
-      const promoteThresh = tier === 2 ? 33.5 : 33.2;
+      // Demote if GPU consistently misses VSync budget; promote cleanly once steady at 30 FPS
+      const demoteThresh = tier === 0 ? 24.0 : 42.0;
+      const promoteThresh = 35.5;
 
-      if (ewmaMs > demoteThresh && tier < TIERS.length - 1) {
+      if (ewmaMs > demoteThresh && tier < tiers.length - 1) {
         badStreak++;
         goodStreak = 0;
-        if (badStreak >= 3) {
+        if (badStreak >= 4) {
           tier++;
           badStreak = 0;
-          ewmaMs = TIERS[tier].interval + 4;
-          onQualityChange?.(TIERS[tier].scale);
+          ewmaMs = tiers[tier].interval + 4;
+          demoteCooldownUntil = now + 20000;
+          onQualityChange?.(tiers[tier].scale);
         }
-      } else if (tier > 0 && ewmaMs < promoteThresh) {
+      } else if (tier > 0 && ewmaMs < promoteThresh && now >= demoteCooldownUntil) {
         goodStreak++;
         badStreak = 0;
-        // Wide hysteresis (~12s steady headroom) so quality never oscillates
-        if (goodStreak >= 30 && tier === 2) {
+        // Steady headroom (~10s) -> recover sharpness back toward Tier 0
+        if (goodStreak >= 25) {
           tier--;
           goodStreak = 0;
-          onQualityChange?.(TIERS[tier].scale);
+          ewmaMs = tiers[tier].interval + 2;
+          onQualityChange?.(tiers[tier].scale);
         }
       } else {
         badStreak = Math.max(0, badStreak - 1);
@@ -487,7 +584,9 @@ export function createPerfGovernor({ isPreview = false, onQualityChange = null }
 
     /** Returns true when a Canvas2D sprite layer should redraw & upload to GPU. */
     shouldUpload2d(now, force = false) {
-      if (force || now - lastUploadAt >= TIERS[tier].uploadMs) {
+      const tiers = getTiers();
+      const uploadMs = tiers[Math.min(tier, tiers.length - 1)].uploadMs;
+      if (force || now - lastUploadAt >= uploadMs) {
         lastUploadAt = now;
         return true;
       }

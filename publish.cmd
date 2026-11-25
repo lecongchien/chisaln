@@ -23,6 +23,8 @@ echo [2/4] Publishing self-contained compressed single-file win-x64 build (v%APP
 if exist "%STAGE_DIR%" rmdir /s /q "%STAGE_DIR%"
 mkdir "%STAGE_DIR%" >nul 2>&1
 
+if "%SCREAM_UPDATE_REPO%"=="" set "SCREAM_UPDATE_REPO=lecongchien/chisaln-releases"
+
 dotnet publish ".\Scream.csproj" ^
   -c Release ^
   -r win-x64 ^
@@ -32,6 +34,7 @@ dotnet publish ".\Scream.csproj" ^
   -p:EnableCompressionInSingleFile=true ^
   -p:DebugType=none ^
   -p:DebugSymbols=false ^
+  -p:ScreamUpdateRepo=%SCREAM_UPDATE_REPO% ^
   -o "%STAGE_DIR%"
 if errorlevel 1 (
   echo [ERROR] dotnet publish failed!

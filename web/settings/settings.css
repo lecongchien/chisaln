@@ -234,6 +234,27 @@ html, body {
   color: var(--ink);
   box-shadow: none;
 }
+.btn.btn-primary {
+  background: var(--accent);
+  border-color: transparent;
+  color: #ffffff;
+  box-shadow: 0 2px 8px -2px rgba(0, 122, 255, 0.45);
+}
+.btn.btn-primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  box-shadow: 0 4px 12px -3px rgba(0, 122, 255, 0.52);
+}
+.btn-spinner {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 1.8px solid currentColor;
+  border-top-color: transparent;
+  opacity: 0.85;
+  animation: spin 720ms linear infinite;
+  flex-shrink: 0;
+}
+.btn-spinner[hidden] { display: none; }
 .btn svg {
   width: 13.5px;
   height: 13.5px;
@@ -689,6 +710,10 @@ html, body {
   max-width: 224px;
 }
 .inspector-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
   height: 27px;
   padding: 0 12px;
   border: none;
@@ -703,6 +728,16 @@ html, body {
   white-space: nowrap;
   transition: background 180ms var(--ease-spring), color 150ms ease, box-shadow 180ms ease;
 }
+.tab-update-dot {
+  display: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+  flex-shrink: 0;
+}
+.tab-update-dot.visible { display: inline-block; }
 .inspector-tab:hover:not(.active) { color: var(--ink); }
 .inspector-tab:focus-visible {
   outline: 2px solid var(--accent);
@@ -956,6 +991,90 @@ input[type="range"]:focus-visible::-webkit-slider-thumb {
 .toggle:focus-visible {
   outline: 2.5px solid var(--accent);
   outline-offset: 2px;
+}
+
+/* Software Update Card */
+.update-card-row {
+  padding: 11px 14px 12px;
+  border-top: 1px solid var(--hairline);
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.update-row-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.update-copy {
+  min-width: 0;
+  flex: 1;
+}
+.update-title-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.update-version {
+  font-size: 12.6px;
+  font-weight: 600;
+  letter-spacing: -0.012em;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.update-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 7px;
+  border-radius: 99px;
+  font-size: 10.5px;
+  font-weight: 620;
+  letter-spacing: -0.005em;
+  font-variant-numeric: tabular-nums;
+  background: var(--fill-soft);
+  color: var(--ink-2);
+}
+.update-pill[hidden] { display: none; }
+.update-pill.is-available {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.update-pill.is-ok {
+  background: rgba(52, 199, 89, 0.14);
+  color: #248a3d;
+}
+:root[data-appearance="dark"] .update-pill.is-ok {
+  color: #4cd964;
+}
+.update-pill.is-error {
+  background: rgba(255, 59, 48, 0.12);
+  color: var(--danger);
+}
+.update-detail {
+  font-size: 11px;
+  color: var(--ink-3);
+  margin-top: 2px;
+  line-height: 1.36;
+  font-variant-numeric: tabular-nums;
+  word-break: break-word;
+}
+.update-progress-wrap[hidden] { display: none; }
+.update-progress-track {
+  width: 100%;
+  height: 4px;
+  border-radius: 99px;
+  background: var(--track-rest);
+  overflow: hidden;
+}
+.update-progress-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: 99px;
+  background: var(--accent);
+  transition: width 160ms ease;
 }
 
 /* Global Keyboard Shortcuts Reference Card */

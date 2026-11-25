@@ -50,7 +50,24 @@ const state = {
   manualPause: false,
   autostart: false,
   autopause: true,
+  autoupdate: true,
+  renderQuality: 'ultra',
   multimonitor: false,
+  platform: hasWebKit ? 'macos' : 'windows',
+  appVersion: '1.0.0',
+  update: {
+    state: 'idle',
+    currentVersion: '1.0.0',
+    latestVersion: '',
+    progress: 0,
+    downloadedBytes: 0,
+    totalBytes: 0,
+    errorCode: '',
+    message: '',
+    canInstall: false,
+    isDevBuild: false,
+    userInitiated: false
+  },
   screenCount: 1,
   iconCount: 12,
   latestIconsMsg: null,
@@ -80,6 +97,8 @@ const el = {
   paramsContainer: document.getElementById('params-container'),
   tabBtnScene: document.getElementById('tab-btn-scene'),
   tabBtnSystem: document.getElementById('tab-btn-system'),
+  tabBtnSystemLabel: document.getElementById('tab-btn-system-label'),
+  tabUpdateDot: document.getElementById('tab-update-dot'),
   tabPanelScene: document.getElementById('tab-panel-scene'),
   tabPanelSystem: document.getElementById('tab-panel-system'),
   statusDot: document.getElementById('status-dot'),
@@ -105,6 +124,18 @@ const el = {
   togAutopause: document.getElementById('tog-autopause'),
   togMultimon: document.getElementById('tog-multimon'),
   togAutostart: document.getElementById('tog-autostart'),
+  togAutoupdate: document.getElementById('tog-autoupdate'),
+  qualitySeg: document.getElementById('quality-seg'),
+  valQuality: document.getElementById('val-quality'),
+  updateVersion: document.getElementById('update-version'),
+  updatePill: document.getElementById('update-pill'),
+  updateDetail: document.getElementById('update-detail'),
+  btnUpdateAction: document.getElementById('btn-update-action'),
+  btnUpdateLabel: document.getElementById('btn-update-label'),
+  updateSpinner: document.getElementById('update-spinner'),
+  updateProgressWrap: document.getElementById('update-progress-wrap'),
+  updateProgressBar: document.getElementById('update-progress-bar'),
+  updateProgressFill: document.getElementById('update-progress-fill'),
   errorBox: document.getElementById('error-box'),
   errorMsg: document.getElementById('error-msg'),
   btnRetry: document.getElementById('btn-retry'),
@@ -236,6 +267,7 @@ function buildPreviewQuery(themeObj) {
   let q = '';
   if (bag.viewMode !== undefined) q += `&view=${Math.round(Number(bag.viewMode) || 0)}`;
   if (bag.timeMode !== undefined) q += `&time=${Math.round(Number(bag.timeMode) || 0)}`;
+  q += `&q=${state.renderQuality || 'ultra'}`;
   return q;
 }
 
@@ -291,6 +323,7 @@ function syncPreviewState() {
   const bag = ensureThemeParams(themeObj);
   sendToPreview({ t: 'settings', v: bag });
   sendToPreview({ t: 'moon', mode: state.moonMode, date: state.moonDate });
+  sendToPreview({ t: 'quality', v: state.renderQuality || 'ultra' });
   if (state.latestIconsMsg) {
     sendToPreview(state.latestIconsMsg);
   }
@@ -421,7 +454,8 @@ function applyStaticCopy() {
   el.btnReloadLabel.textContent = t('reload');
   el.btnAppearance.title = t('appearanceToggleHint');
   el.btnAppearance.setAttribute('aria-label', t('appearanceToggleHint'));
-  el.btnTrayLabel.textContent = t('hideTray');
+  const isMac = state.platform === 'macos';
+  el.btnTrayLabel.textContent = isMac ? t('hideMenuBar') : t('hideTray');
   el.btnTray.style.display = hasHost ? 'inline-flex' : 'none';
   el.btnFullscreen.title = t('fullscreen');
   el.btnFullscreen.setAttribute('aria-label', t('fullscreen'));
@@ -431,9 +465,14 @@ function applyStaticCopy() {
   }
 
   el.tabBtnScene.textContent = t('tabScene');
-  el.tabBtnSystem.textContent = t('tabSystem');
+  if (el.tabBtnSystemLabel) {
+    el.tabBtnSystemLabel.textContent = t('tabSystem');
+  }
   document.getElementById('themes-heading').textContent = t('themesHeading');
   document.getElementById('lbl-system-group').textContent = t('systemGroup');
+  document.getElementById('lbl-update-group').textContent = t('updateGroup');
+  document.getElementById('lbl-autoupdate').textContent = t('autoupdate');
+  document.getElementById('hint-autoupdate').textContent = t('autoupdateHint');
   document.getElementById('lbl-appearance-group').textContent = t('appearanceGroup');
   document.getElementById('lbl-appearance').textContent = t('appearanceLabel');
   document.getElementById('hint-appearance').textContent = t('appearanceHint');
@@ -447,12 +486,31 @@ function applyStaticCopy() {
   document.getElementById('hint-autopause').textContent = t('autopauseHint');
   document.getElementById('lbl-multimon').textContent = t('multimon');
   document.getElementById('hint-multimon').textContent = t('multimonHint')(state.screenCount);
-  document.getElementById('lbl-autostart').textContent = t('autostart');
-  document.getElementById('hint-autostart').textContent = t('autostartHint');
+  document.getElementById('lbl-autostart').textContent = isMac ? t('autostartMac') : t('autostart');
+  document.getElementById('hint-autostart').textContent = isMac ? t('autostartMacHint') : t('autostartHint');
+  const lblQ = document.getElementById('lbl-quality');
+  const hintQ = document.getElementById('hint-quality');
+  if (lblQ) lblQ.textContent = t('qualityLabel');
+  if (hintQ) hintQ.textContent = t('qualityHint');
+  if (el.valQuality) {
+    el.valQuality.textContent = t('qualityOpts')[state.renderQuality] || state.renderQuality;
+  }
+  if (el.qualitySeg) {
+    el.qualitySeg.querySelectorAll('button[data-quality]').forEach((btn) => {
+      const active = btn.dataset.quality === state.renderQuality;
+      btn.classList.toggle('active', active);
+      btn.setAttribute('aria-pressed', String(active));
+      const lbl = t('qualityOpts')[btn.dataset.quality];
+      if (lbl) btn.textContent = lbl;
+    });
+  }
 
   el.togAutopause.setAttribute('aria-checked', String(!!state.autopause));
   el.togMultimon.setAttribute('aria-checked', String(!!state.multimonitor));
   el.togAutostart.setAttribute('aria-checked', String(!!state.autostart));
+  if (el.togAutoupdate) {
+    el.togAutoupdate.setAttribute('aria-checked', String(!!state.autoupdate));
+  }
 
   document.querySelectorAll('.lang-pill button').forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.lang === state.lang);
@@ -460,6 +518,111 @@ function applyStaticCopy() {
 
   applyAppearance();
   syncQuickTimeDock();
+  renderUpdateSection();
+}
+
+function formatBytes(bytes) {
+  if (!bytes || bytes <= 0) return '';
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
+function renderUpdateSection() {
+  if (!el.updateVersion || !el.btnUpdateAction) return;
+  const u = state.update;
+  const curVer = u.currentVersion || state.appVersion || '1.0.0';
+  const latestVer = u.latestVersion || '';
+  const st = u.state || 'idle';
+
+  el.updateVersion.textContent = `Scream v${curVer}`;
+
+  // Tab indicator dot when an update is pending or actively downloading/installing
+  const showDot = st === 'available' || st === 'readyToInstall' || st === 'downloading' || st === 'installing';
+  if (el.tabUpdateDot) {
+    el.tabUpdateDot.classList.toggle('visible', showDot);
+  }
+
+  // Pill badge
+  el.updatePill.className = 'update-pill';
+  if (st === 'upToDate') {
+    el.updatePill.hidden = false;
+    el.updatePill.classList.add('is-ok');
+    el.updatePill.textContent = t('updateUpToDatePill');
+  } else if ((st === 'available' || st === 'readyToInstall' || st === 'downloading' || st === 'installing') && latestVer) {
+    el.updatePill.hidden = false;
+    el.updatePill.classList.add('is-available');
+    el.updatePill.textContent = t('updateAvailablePill')(latestVer);
+  } else if (st === 'error') {
+    el.updatePill.hidden = false;
+    el.updatePill.classList.add('is-error');
+    el.updatePill.textContent = t('updateErrorPill');
+  } else {
+    el.updatePill.hidden = true;
+    el.updatePill.textContent = '';
+  }
+
+  // Progress bar
+  const isDownloading = st === 'downloading';
+  const isInstalling = st === 'installing';
+  el.updateProgressWrap.hidden = !(isDownloading || isInstalling);
+  const pct = isInstalling ? 100 : Math.max(0, Math.min(100, Number(u.progress) || 0));
+  el.updateProgressFill.style.width = `${pct}%`;
+  el.updateProgressBar.setAttribute('aria-valuenow', String(pct));
+
+  // Detail line + Action button
+  const busy = st === 'checking' || isDownloading || isInstalling;
+  el.btnUpdateAction.disabled = busy;
+  el.updateSpinner.hidden = !busy;
+  const canInstallNow = (st === 'available' || st === 'readyToInstall') && !!latestVer && !u.isDevBuild;
+  el.btnUpdateAction.classList.toggle('btn-primary', canInstallNow);
+
+  switch (st) {
+    case 'checking':
+      el.updateDetail.textContent = t('updateCheckingDetail');
+      el.btnUpdateLabel.textContent = t('updateCheckingBtn');
+      break;
+    case 'upToDate':
+      el.updateDetail.textContent = t('updateUpToDateDetail');
+      el.btnUpdateLabel.textContent = t('updateCheckBtn');
+      break;
+    case 'available':
+      el.updateDetail.textContent = u.isDevBuild
+        ? t('updateDevReadyDetail')(latestVer)
+        : t('updateAvailableDetail')(latestVer);
+      el.btnUpdateLabel.textContent = u.isDevBuild
+        ? t('updateCheckBtn')
+        : t('updateInstallBtn')(latestVer);
+      break;
+    case 'downloading':
+      el.updateDetail.textContent = t('updateDownloadingDetail')(
+        latestVer,
+        formatBytes(u.downloadedBytes),
+        formatBytes(u.totalBytes),
+        pct
+      );
+      el.btnUpdateLabel.textContent = t('updateDownloadingBtn')(pct);
+      break;
+    case 'readyToInstall':
+      el.updateDetail.textContent = u.isDevBuild
+        ? t('updateDevReadyDetail')(latestVer)
+        : t('updateReadyDetail')(latestVer);
+      el.btnUpdateLabel.textContent = u.isDevBuild
+        ? t('updateCheckBtn')
+        : t('updateInstallBtn')(latestVer);
+      break;
+    case 'installing':
+      el.updateDetail.textContent = t('updateInstallingDetail')(latestVer);
+      el.btnUpdateLabel.textContent = t('updateInstallingBtn');
+      break;
+    case 'error':
+      el.updateDetail.textContent = t('updateErrorDetail')(u.message || 'Unknown');
+      el.btnUpdateLabel.textContent = t('updateRetryBtn');
+      break;
+    default:
+      el.updateDetail.textContent = t('updateIdleDetail');
+      el.btnUpdateLabel.textContent = t('updateCheckBtn');
+      break;
+  }
 }
 
 function renderThemes() {
@@ -997,6 +1160,43 @@ function bindEvents() {
     applyStaticCopy();
   });
 
+  if (el.togAutoupdate) {
+    el.togAutoupdate.addEventListener('click', () => {
+      state.autoupdate = !state.autoupdate;
+      sendToHost({ t: 'autoupdate', v: state.autoupdate });
+      applyStaticCopy();
+    });
+  }
+
+  if (el.qualitySeg) {
+    el.qualitySeg.querySelectorAll('button[data-quality]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const nextQ = btn.dataset.quality;
+        if (nextQ !== 'eco' && nextQ !== 'balanced' && nextQ !== 'ultra') return;
+        if (state.renderQuality === nextQ) return;
+        state.renderQuality = nextQ;
+        sendToHost({ t: 'quality', v: nextQ });
+        sendToPreview({ t: 'quality', v: nextQ });
+        applyStaticCopy();
+      });
+    });
+  }
+
+  if (el.btnUpdateAction) {
+    el.btnUpdateAction.addEventListener('click', () => {
+      if (!hasHost) {
+        showToast(t('updateHostOnly'));
+        return;
+      }
+      const st = state.update.state;
+      if ((st === 'available' || st === 'readyToInstall') && !state.update.isDevBuild) {
+        sendToHost({ t: 'installUpdate' });
+      } else {
+        sendToHost({ t: 'checkUpdate' });
+      }
+    });
+  }
+
   el.btnFullscreen.addEventListener('click', () => {
     try {
       if (document.fullscreenElement) {
@@ -1076,13 +1276,22 @@ function bindEvents() {
         case 'init': {
           const prevTheme = state.themeId;
           state.hostInitialized = true;
+          if (msg.platform) state.platform = msg.platform;
+          if (msg.appVersion) {
+            state.appVersion = msg.appVersion;
+            state.update.currentVersion = msg.appVersion;
+          }
           if (msg.theme) state.themeId = msg.theme;
           if (msg.lang) state.lang = msg.lang;
           if (msg.moonMode) state.moonMode = msg.moonMode;
           if (msg.moonDate) state.moonDate = msg.moonDate;
+          if (msg.renderQuality === 'eco' || msg.renderQuality === 'balanced' || msg.renderQuality === 'ultra') {
+            state.renderQuality = msg.renderQuality;
+          }
           if (msg.paramsByTheme) state.paramsByTheme = msg.paramsByTheme;
           state.autostart = !!msg.autostart;
           state.autopause = msg.autopause !== false;
+          state.autoupdate = msg.autoupdate !== false;
           state.multimonitor = !!msg.multimonitor;
           state.screenCount = msg.screenCount || 1;
           state.paused = !!msg.paused;
@@ -1102,6 +1311,7 @@ function bindEvents() {
         case 'status':
           state.autostart = !!msg.autostart;
           state.autopause = msg.autopause !== false;
+          if (typeof msg.autoupdate === 'boolean') state.autoupdate = msg.autoupdate;
           state.multimonitor = !!msg.multimonitor;
           state.screenCount = msg.screenCount || 1;
           state.paused = !!msg.paused;
@@ -1109,6 +1319,46 @@ function bindEvents() {
           if (typeof msg.iconCount === 'number') state.iconCount = msg.iconCount;
           applyStaticCopy();
           sendToPreview({ t: 'pause', v: state.manualPause, manual: true });
+          break;
+
+        case 'updateState': {
+          const prevState = state.update.state;
+          state.update = {
+            state: msg.state || 'idle',
+            currentVersion: msg.currentVersion || state.appVersion,
+            latestVersion: msg.latestVersion || '',
+            progress: typeof msg.progress === 'number' ? msg.progress : 0,
+            downloadedBytes: Number(msg.downloadedBytes) || 0,
+            totalBytes: Number(msg.totalBytes) || 0,
+            errorCode: msg.errorCode || '',
+            message: msg.message || '',
+            canInstall: !!msg.canInstall,
+            isDevBuild: !!msg.isDevBuild,
+            userInitiated: !!msg.userInitiated
+          };
+          if (typeof msg.autoupdate === 'boolean') {
+            state.autoupdate = msg.autoupdate;
+            if (el.togAutoupdate) {
+              el.togAutoupdate.setAttribute('aria-checked', String(state.autoupdate));
+            }
+          }
+          renderUpdateSection();
+          if (msg.userInitiated && prevState !== state.update.state) {
+            if (state.update.state === 'upToDate') {
+              showToast(t('updateToastUpToDate')(state.update.currentVersion), null, null, 3400);
+            } else if (state.update.state === 'available' && state.update.latestVersion) {
+              showToast(t('updateToastAvailable')(state.update.latestVersion), null, null, 3800);
+            } else if (state.update.state === 'error' && state.update.message) {
+              showToast(t('updateToastError')(state.update.message), null, null, 4600);
+            }
+          }
+          break;
+        }
+
+        case 'openTab':
+          if (msg.tab === 'system' || msg.tab === 'scene') {
+            switchTab(msg.tab);
+          }
           break;
 
         case 'icons':

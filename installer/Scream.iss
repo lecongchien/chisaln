@@ -57,13 +57,23 @@ Name: "{userdesktop}\{#MyAppShortName}"; Filename: "{app}\{#MyAppExeName}"; Icon
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: none; ValueName: "ScreamWallpaper"; Flags: uninsdeletevalue
 
 [Run]
-; Auto-launch Scream immediately once installation completes!
-Filename: "{app}\{#MyAppExeName}"; Flags: nowait postinstall
+; Interactive install: open Scream normally (shows Settings window)
+Filename: "{app}\{#MyAppExeName}"; Flags: nowait postinstall skipifsilent
+; Silent auto-update (/VERYSILENT): relaunch Scream automatically (background --autostart or interactive per flag)
+Filename: "{app}\{#MyAppExeName}"; Parameters: "{code:GetRelaunchParams}"; Flags: nowait skipifnotsilent
 
 [Code]
 const
   WebView2RegKey = 'SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}';
   WebView2Url    = 'https://go.microsoft.com/fwlink/p/?LinkId=2124703';
+
+function GetRelaunchParams(Param: String): String;
+begin
+  if ExpandConstant('{param:SCREAM_SILENT_LAUNCH|0}') = '1' then
+    Result := '--autostart'
+  else
+    Result := '';
+end;
 
 function IsWebView2Installed(): Boolean;
 var
@@ -109,7 +119,7 @@ procedure CurStepChanged(CurStep: TSetupStep);
 var
   ErrCode: Integer;
 begin
-  if (CurStep = ssPostInstall) and (not IsWebView2Installed()) then
+  if (CurStep = ssPostInstall) and (not WizardSilent) and (not IsWebView2Installed()) then
   begin
     if MsgBox(
       'Microsoft Edge WebView2 Runtime was not detected on this PC.' + #13#10 +

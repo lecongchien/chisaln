@@ -1,3 +1,5 @@
+import { setRenderQuality } from './field-engine.js';
+
 /**
  * Unified Bridge between Theme Page and:
  * 1. C# Host WebView2 (?host=1 / window.chrome.webview)
@@ -155,6 +157,11 @@ export function createHostBridge(callbacks) {
           mode: msg.mode || 'full',
           date: msg.date || '2000-08-15'
         });
+        break;
+
+      case 'quality':
+        setRenderQuality(msg.v);
+        callbacks.onQuality?.(msg.v);
         break;
 
       case 'mouse':

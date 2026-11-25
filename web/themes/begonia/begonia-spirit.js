@@ -1,3 +1,5 @@
+import { getSpriteMaxWidth } from '../../core/field-engine.js';
+
 /**
  * Big Fish & Begonia Spirit & Living Elements Engine ("Đại Ngư Hải Đường")
  * Orchestrates:
@@ -166,7 +168,10 @@ export function createBegoniaSpirit(gl, onReady) {
   }
 
   function resize(W, H) {
-    const scale = Math.min(1.0, 800 / Math.max(1, W));
+    const maxW = getSpriteMaxWidth(1920);
+    const dpr = Math.min(1.5, Math.max(1.0, window.devicePixelRatio || 1));
+    const targetW = Math.min(maxW, Math.round(W * dpr));
+    const scale = Math.min(1.5, targetW / Math.max(1, W));
     const nw = Math.max(320, Math.round(W * scale));
     const nh = Math.max(180, Math.round(H * scale));
     if (canvas.width !== nw || canvas.height !== nh) {

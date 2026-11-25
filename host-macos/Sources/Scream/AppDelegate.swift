@@ -6,6 +6,7 @@ import Foundation
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var store: SettingsStore!
     private var menuBar: MenuBarController!
+    private var updater: AppUpdater!
     private var wallpapers: [WallpaperWindowController] = []
     private var settingsWindow: SettingsWindowController?
     private var saveTimer: Timer?
@@ -24,8 +25,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onTogglePause: { [weak self] in self?.toggleManualPause() },
             onReload: { [weak self] in self?.reloadWallpapers() },
             onToggleMultiMonitor: { [weak self] in self?.toggleMultiMonitor() },
+            onUpdateAction: { [weak self] in self?.handleMenuBarUpdateAction() },
             onQuit: { [weak self] in self?.quitApp() }
         )
+
+        updater = AppUpdater(
+            dataDir: store.dataDir,
+            autoUpdateEnabled: store.current.autoUpdate,
+            requestAppExit: { [weak self] in self?.quitApp() }
+        )
+        updater.onStateChanged = { [weak self] snap in
+            self?.handleUpdateStateChanged(snap)
+        }
 
         NotificationCenter.default.addObserver(
             self,
@@ -50,6 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         saveTimer?.invalidate()
+        updater?.shutdown()
         store?.saveSettings()
         disposeWallpapers()
         settingsWindow?.shutdown()
@@ -205,6 +217,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             for w in wallpapers { w.setAutoPauseEnabled(enable) }
             pushStatusToSettings()
 
+        case "autoupdate":
+            let enable = root["v"] as? Bool ?? true
+            store.current.autoUpdate = enable
+            scheduleSave()
+            updater.setAutoUpdateEnabled(enable)
+            pushStatusToSettings()
+
+        case "checkUpdate":
+            updater.checkForUpdates(userInitiated: true)
+
+        case "installUpdate":
+            updater.downloadAndInstall(silentRelaunch: false, userInitiated: true)
+
         case "multimonitor":
             let multi = root["v"] as? Bool ?? false
             if multi != store.current.multiMonitor {
@@ -259,6 +284,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             scheduleSave()
             for w in wallpapers { w.sendMoonConfig(mode: mode, date: date) }
 
+        case "quality":
+            var q = root["v"] as? String ?? "ultra"
+            if q != "eco" && q != "balanced" && q != "ultra" { q = "ultra" }
+            store.current.renderQuality = q
+            scheduleSave()
+            for w in wallpapers { w.sendRenderQuality(q) }
+
         case "revealFile":
             if let path = root["path"] as? String, !path.isEmpty, FileManager.default.fileExists(atPath: path) {
                 NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
@@ -280,13 +312,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         sw.postObject([
             "t": "init",
+            "platform": "macos",
+            "appVersion": updater.currentVersion,
             "theme": store.current.theme,
             "lang": store.current.lang,
             "moonMode": store.current.moonMode,
             "moonDate": store.current.moonDate,
+            "renderQuality": store.current.renderQuality,
             "paramsByTheme": allParams,
             "autostart": store.isAutoStartEnabled(),
             "autopause": store.current.autoPause,
+            "autoupdate": store.current.autoUpdate,
             "multimonitor": store.current.multiMonitor,
             "screenCount": NSScreen.screens.count,
             "paused": wallpapers.first?.isPaused ?? false,
@@ -298,6 +334,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !latestIconsJson.isEmpty {
             sw.postJson(latestIconsJson)
         }
+        sw.postObject(updater.snapshot.toPayload())
     }
 
     private func pushStatusToSettings() {
@@ -305,6 +342,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             "t": "status",
             "autostart": store.isAutoStartEnabled(),
             "autopause": store.current.autoPause,
+            "autoupdate": store.current.autoUpdate,
             "multimonitor": store.current.multiMonitor,
             "screenCount": NSScreen.screens.count,
             "paused": wallpapers.first?.isPaused ?? false,
@@ -360,6 +398,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             paused: manualPause,
             multiMonitor: store.current.multiMonitor
         )
+    }
+
+    private func handleMenuBarUpdateAction() {
+        openSettings()
+        settingsWindow?.postObject(["t": "openTab", "tab": "system"])
+        let st = updater.snapshot.state
+        if st == "available" || st == "readyToInstall" {
+            updater.downloadAndInstall(silentRelaunch: false, userInitiated: true)
+        } else if st != "checking" && st != "downloading" && st != "installing" {
+            updater.checkForUpdates(userInitiated: true)
+        }
+    }
+
+    private func handleUpdateStateChanged(_ snap: UpdateStatusSnapshot) {
+        menuBar.syncUpdateState(lang: store.current.lang, state: snap.state, latestVersion: snap.latestVersion, progress: snap.progress)
+        settingsWindow?.postObject(snap.toPayload())
     }
 
     private func quitApp() {

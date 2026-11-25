@@ -29,6 +29,7 @@ namespace Scream.Application
         private readonly TrayController _tray;
         private readonly GlobalHotkeyManager _hotkeys;
         private readonly IpcCommandServer _ipc;
+        private readonly AppUpdater _updater;
         private readonly System.Windows.Forms.Timer _saveTimer;
 
         private CoreWebView2Environment? _webEnv;
@@ -52,7 +53,11 @@ namespace Scream.Application
                 ToggleManualPause,
                 ReloadWallpapers,
                 ToggleMultiMonitor,
+                HandleTrayUpdateClick,
                 ShutdownAll);
+
+            _updater = new AppUpdater(_store.DataDir, _store.Current.AutoUpdate, ShutdownAll);
+            _updater.StateChanged += OnUpdateStateChanged;
 
             _hotkeys = new GlobalHotkeyManager();
             uint mods = Native.MOD_CONTROL | Native.MOD_ALT | Native.MOD_NOREPEAT;
@@ -107,6 +112,10 @@ namespace Scream.Application
             {
                 sb.Append("&time=").Append((int)Math.Round(tm));
             }
+            string q = _store.Current.RenderQuality is "eco" or "balanced" or "ultra"
+                ? _store.Current.RenderQuality
+                : "ultra";
+            sb.Append("&q=").Append(q);
             return sb.ToString();
         }
 
@@ -256,6 +265,22 @@ namespace Scream.Application
                         PushStatusToSettings();
                         break;
 
+                    case "autoupdate":
+                        bool enableAutoUpdate = root.TryGetProperty("v", out var auEl) && auEl.GetBoolean();
+                        _store.Current.AutoUpdate = enableAutoUpdate;
+                        ScheduleSave();
+                        _updater.SetAutoUpdateEnabled(enableAutoUpdate);
+                        PushStatusToSettings();
+                        break;
+
+                    case "checkUpdate":
+                        _ = _updater.CheckForUpdatesAsync(userInitiated: true);
+                        break;
+
+                    case "installUpdate":
+                        _ = _updater.DownloadAndInstallAsync(silentRelaunch: false, userInitiated: true);
+                        break;
+
                     case "multimonitor":
                         bool multi = root.TryGetProperty("v", out var mmEl) && mmEl.GetBoolean();
                         if (multi != _store.Current.MultiMonitor)
@@ -314,6 +339,14 @@ namespace Scream.Application
                         foreach (var wf in _wallpapers) wf.SendMoonConfig(mMode, mDate);
                         break;
 
+                    case "quality":
+                        string qMode = root.TryGetProperty("v", out var qEl) ? qEl.GetString() ?? "ultra" : "ultra";
+                        if (qMode != "eco" && qMode != "balanced" && qMode != "ultra") qMode = "ultra";
+                        _store.Current.RenderQuality = qMode;
+                        ScheduleSave();
+                        foreach (var wf in _wallpapers) wf.SendRenderQuality(qMode);
+                        break;
+
                     case "revealFile":
                         string pathToOpen = root.TryGetProperty("path", out var pEl) ? pEl.GetString() ?? "" : "";
                         if (!string.IsNullOrEmpty(pathToOpen) && File.Exists(pathToOpen))
@@ -347,19 +380,24 @@ namespace Scream.Application
                 lang = _store.Current.Lang,
                 moonMode = _store.Current.MoonMode,
                 moonDate = _store.Current.MoonDate,
+                renderQuality = _store.Current.RenderQuality is "eco" or "balanced" or "ultra" ? _store.Current.RenderQuality : "ultra",
                 paramsByTheme = allParams,
                 autostart = _store.IsAutoStartEnabled(),
                 autopause = _store.Current.AutoPause,
+                autoupdate = _store.Current.AutoUpdate,
                 multimonitor = _store.Current.MultiMonitor,
                 screenCount = Screen.AllScreens.Length,
                 paused = _wallpapers.Count > 0 && _wallpapers[0].IsPaused,
                 manualPause = _manualPause,
                 iconCount = _latestIconCount,
                 wallpaperReady = _wallpapers.Count == 0 || _wallpapers[0].IsPageReady,
-                attachMode = _wallpapers.Count > 0 ? _wallpapers[0].AttachMode : ""
+                attachMode = _wallpapers.Count > 0 ? _wallpapers[0].AttachMode : "",
+                appVersion = _updater.CurrentVersion,
+                platform = "windows"
             });
 
             if (!string.IsNullOrEmpty(_latestIconsJson)) _settingsForm.PostJson(_latestIconsJson);
+            PushUpdateStateToSettings(_updater.Snapshot);
         }
 
         private void PushStatusToSettings()
@@ -370,6 +408,7 @@ namespace Scream.Application
                 t = "status",
                 autostart = _store.IsAutoStartEnabled(),
                 autopause = _store.Current.AutoPause,
+                autoupdate = _store.Current.AutoUpdate,
                 multimonitor = _store.Current.MultiMonitor,
                 screenCount = Screen.AllScreens.Length,
                 paused = _wallpapers.Count > 0 && _wallpapers[0].IsPaused,
@@ -378,6 +417,49 @@ namespace Scream.Application
                 wallpaperReady = _wallpapers.Count == 0 || _wallpapers[0].IsPageReady,
                 attachMode = _wallpapers.Count > 0 ? _wallpapers[0].AttachMode : ""
             });
+        }
+
+        private void OnUpdateStateChanged(UpdateStatusSnapshot snap)
+        {
+            if (_exiting) return;
+            _tray.SyncUpdateState(_store.Current.Lang, snap.State, snap.LatestVersion, snap.Progress);
+            PushUpdateStateToSettings(snap);
+        }
+
+        private void PushUpdateStateToSettings(UpdateStatusSnapshot snap)
+        {
+            if (_settingsForm == null || _settingsForm.IsDisposed) return;
+            _settingsForm.PostObject(new
+            {
+                t = "updateState",
+                state = snap.State,
+                currentVersion = snap.CurrentVersion,
+                latestVersion = snap.LatestVersion,
+                progress = snap.Progress,
+                downloadedBytes = snap.DownloadedBytes,
+                totalBytes = snap.TotalBytes,
+                errorCode = snap.ErrorCode,
+                message = snap.Message,
+                canInstall = snap.CanInstall,
+                isDevBuild = snap.IsDevBuild,
+                autoupdate = snap.AutoUpdate,
+                userInitiated = snap.UserInitiated,
+                lastCheckedUtc = snap.LastCheckedUtc
+            });
+        }
+
+        private void HandleTrayUpdateClick()
+        {
+            OpenSettings();
+            _settingsForm?.PostObject(new { t = "openTab", tab = "system" });
+            if (_updater.Snapshot.State is "available" or "readyToInstall")
+            {
+                _ = _updater.DownloadAndInstallAsync(silentRelaunch: false, userInitiated: true);
+            }
+            else if (_updater.Snapshot.State is not ("checking" or "downloading" or "installing"))
+            {
+                _ = _updater.CheckForUpdatesAsync(userInitiated: true);
+            }
         }
 
         private void ScheduleSave()
@@ -454,6 +536,8 @@ namespace Scream.Application
             _exiting = true;
 
             SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
+            _updater.StateChanged -= OnUpdateStateChanged;
+            _updater.Dispose();
             _ipc.Dispose();
             _saveTimer.Stop();
             _store.SaveSettings();

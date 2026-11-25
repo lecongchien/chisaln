@@ -165,6 +165,12 @@ final class WallpaperWindowController: NSObject, WKNavigationDelegate {
         if let json = serializeDict(payload) { postJson(json) }
     }
 
+    func sendRenderQuality(_ quality: String) {
+        let q = (quality == "eco" || quality == "balanced" || quality == "ultra") ? quality : "ultra"
+        let payload: [String: Any] = ["t": "quality", "v": q]
+        if let json = serializeDict(payload) { postJson(json) }
+    }
+
     func requestSnapshot(completion: @escaping (Bool, String, String) -> Void) {
         pendingShareCallback = completion
         postJson("{\"t\":\"snapshot\"}")
@@ -201,6 +207,7 @@ final class WallpaperWindowController: NSObject, WKNavigationDelegate {
             pageReady = true
             sendThemeSettings(store.getEffectiveParams(for: store.current.theme))
             sendMoonConfig(mode: store.current.moonMode, date: store.current.moonDate)
+            sendRenderQuality(store.current.renderQuality)
             lastIconsJson = ""
             lastPauseState = -1
             pollIcons()

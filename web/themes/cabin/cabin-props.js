@@ -1,3 +1,5 @@
+import { getSpriteMaxWidth } from '../../core/field-engine.js';
+
 /**
  * Sea Train Central-Aisle Cabin Living Engine ("Trong toa tàu biển" — Living Story & Interactive Engine)
  * Loads hand-painted central-aisle interior (`cabin-frame.webp`) & Chihiro + Towering No-Face (`cabin-noface.webp`),
@@ -330,7 +332,10 @@ export function createCabinLivingEngine(gl, onReady, sharedExt = null) {
   }
 
   function resize(W, H) {
-    const scale = Math.min(1.0, 960 / Math.max(1, W));
+    const maxW = getSpriteMaxWidth(1920);
+    const dpr = Math.min(1.5, Math.max(1.0, window.devicePixelRatio || 1));
+    const targetW = Math.min(maxW, Math.round(W * dpr));
+    const scale = Math.min(1.5, targetW / Math.max(1, W));
     const nw = Math.max(320, Math.round(W * scale));
     const nh = Math.max(180, Math.round(H * scale));
     if (canvas.width !== nw || canvas.height !== nh) {
