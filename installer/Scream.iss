@@ -1,6 +1,6 @@
-; Scream Adaptive Wallpaper - Inno Setup 6 Per-User Installer Script
-; Produces a compressed (~50 MB) single-file Windows x64 Setup installer requiring ZERO Admin (UAC) rights.
-; Usage: ISCC.exe /DMyAppVersion=1.0.0 installer\Scream.iss
+; Scream Adaptive Wallpaper - 1-Click Per-User Windows Setup Installer (Inno Setup 6)
+; Double-click Scream-v1.0.0-Setup-x64.exe -> installs automatically in ~3 seconds -> launches Scream immediately!
+; Zero UAC Admin prompt, zero Next-Next-Next wizard steps, clean Start Menu & Desktop shortcuts, clean uninstall.
 
 #ifndef MyAppVersion
   #define MyAppVersion "1.0.0"
@@ -20,8 +20,12 @@ AppVerName={#MyAppName} {#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 DefaultDirName={localappdata}\Programs\{#MyAppShortName}
 DefaultGroupName={#MyAppName}
+; True 1-step install (like Discord / Cursor / Notion): skip all repetitive wizard pages!
+DisableWelcomePage=yes
+DisableDirPage=yes
 DisableProgramGroupPage=yes
-; Modern Per-User install (just like VS Code, Discord, Cursor - zero UAC Admin prompt!)
+DisableReadyPage=yes
+DisableFinishedPage=yes
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
@@ -40,26 +44,21 @@ RestartApplications=no
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
-[Tasks]
-Name: "desktopicon"; Description: "Create a &Desktop shortcut"; GroupDescription: "Additional shortcuts:"
-Name: "autostart"; Description: "Start Scream automatically with &Windows"; GroupDescription: "Startup:"; Flags: unchecked
-
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppExeName}"
 Name: "{group}\Uninstall {#MyAppShortName}"; Filename: "{uninstallexe}"
-Name: "{userdesktop}\{#MyAppShortName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+Name: "{userdesktop}\{#MyAppShortName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppExeName}"
 
 [Registry]
-; Optional Launch on Windows Sign-In (mirrors SettingsRepository.cs RunValueName = "ScreamWallpaper")
-Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "ScreamWallpaper"; ValueData: """{app}\{#MyAppExeName}"" --autostart"; Flags: uninsdeletevalue; Tasks: autostart
-; Ensure Run key is ALWAYS cleaned up on uninstall even if toggled later from inside Scream Settings!
+; Clean up Windows Auto-Start key automatically on uninstall (if user enabled it inside Scream Settings)
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: none; ValueName: "ScreamWallpaper"; Flags: uninsdeletevalue
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent
+; Auto-launch Scream immediately once installation completes!
+Filename: "{app}\{#MyAppExeName}"; Flags: nowait postinstall
 
 [Code]
 const
@@ -113,7 +112,7 @@ begin
   if (CurStep = ssPostInstall) and (not IsWebView2Installed()) then
   begin
     if MsgBox(
-      'Microsoft Edge WebView2 Runtime was not detected on this Windows installation.' + #13#10 +
+      'Microsoft Edge WebView2 Runtime was not detected on this PC.' + #13#10 +
       'Scream requires WebView2 Runtime (free, ~2 MB installer from Microsoft) to render wallpapers.' + #13#10#13#10 +
       'Open the official Microsoft WebView2 download page now?',
       mbConfirmation, MB_YESNO) = IDYES then

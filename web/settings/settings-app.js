@@ -7,7 +7,9 @@
 import { COPY, THEME_THUMBS, THEME_SUBTITLES } from './settings-copy.js';
 import { resolveMoonConfig, parseIsoDate, formatIsoDate, drawMiniMoonCanvas } from '../core/moon-phase.js';
 
-const hasHost = !!(window.chrome && window.chrome.webview);
+const hasWebView2 = !!(window.chrome && window.chrome.webview);
+const hasWebKit = !!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.scream);
+const hasHost = hasWebView2 || hasWebKit;
 const APPEARANCE_KEY = 'scream.ui.appearance';
 const MOON_THEMES = new Set(['seatrain', 'begonia', 'skyship', 'castle', 'meadow']);
 const darkMedia = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
@@ -160,8 +162,11 @@ function t(key) {
 }
 
 function sendToHost(obj) {
-  if (hasHost) {
-    window.chrome.webview.postMessage(JSON.stringify(obj));
+  const str = JSON.stringify(obj);
+  if (hasWebView2) {
+    window.chrome.webview.postMessage(str);
+  } else if (hasWebKit) {
+    window.webkit.messageHandlers.scream.postMessage(str);
   }
 }
 
@@ -1044,8 +1049,8 @@ function bindEvents() {
   });
 
   if (hasHost) {
-    window.chrome.webview.addEventListener('message', (ev) => {
-      let msg = ev.data;
+    const handleHostMessage = (rawData) => {
+      let msg = rawData;
       if (typeof msg === 'string') {
         try { msg = JSON.parse(msg); } catch { return; }
       }
@@ -1124,7 +1129,14 @@ function bindEvents() {
           }
           break;
       }
-    });
+    };
+
+    if (hasWebView2) {
+      window.chrome.webview.addEventListener('message', (ev) => handleHostMessage(ev.data));
+    }
+    if (hasWebKit) {
+      window.__screamReceive = handleHostMessage;
+    }
   }
 
   el.btnRetry.addEventListener('click', boot);

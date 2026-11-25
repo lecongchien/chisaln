@@ -1,4 +1,4 @@
-name: Release Windows x64 Installer & Portable
+name: Release Windows x64 & macOS Universal
 
 on:
   push:
@@ -21,15 +21,48 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
-      - name: Publish Portable ZIP & Inno Setup Installer
+      - name: Publish Windows Setup EXE & Portable ZIP
         shell: cmd
         run: publish.cmd
 
-      - name: Upload Release Artifacts to GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
         with:
-          files: |
+          name: scream-windows-x64
+          path: |
             dist/Scream-v*-Setup-x64.exe
             dist/Scream-v*-Portable-x64.zip
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build macOS Universal .app & .dmg (Apple Silicon + Intel)
+        run: |
+          chmod +x host-macos/scripts/package-dmg.sh
+          ./host-macos/scripts/package-dmg.sh
+
+      - name: Upload macOS DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: scream-macos-universal
+          path: dist/Scream-v*-macOS-*.dmg
+
+  publish-release:
+    needs: [build-windows, build-macos]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all platform installers
+        uses: actions/download-artifact@v4
+        with:
+          path: release-files
+          merge-multiple: true
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-files/*
           generate_release_notes: true

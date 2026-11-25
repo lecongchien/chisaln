@@ -1,7 +1,8 @@
-# .NET / Visual Studio build outputs
+# .NET / Visual Studio / SwiftPM build outputs
 bin/
 obj/
 dist/
+host-macos/.build/
 .vs/
 *.user
 *.suo

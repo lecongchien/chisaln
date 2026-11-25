@@ -38,9 +38,10 @@ if errorlevel 1 (
   exit /b 1
 )
 
-:: Remove dev-only files or stray PDBs if present
+:: Remove dev-only files, XML docs, or stray PDBs if present
 if exist "%STAGE_DIR%\web\serve.mjs" del /q "%STAGE_DIR%\web\serve.mjs"
 del /q "%STAGE_DIR%\*.pdb" >nul 2>&1
+del /q "%STAGE_DIR%\*.xml" >nul 2>&1
 
 echo [3/4] Creating Portable ZIP archive: %ZIP_PATH%
 if exist "%ZIP_PATH%" del /q "%ZIP_PATH%"

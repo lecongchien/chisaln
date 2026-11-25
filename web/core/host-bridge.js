@@ -24,7 +24,9 @@ const SAMPLE_LAYOUT = [
 export function createHostBridge(callbacks) {
   const qs = new URLSearchParams(location.search);
   const isPreview = qs.get('preview') === '1';
-  const hasWebView = !!(window.chrome && window.chrome.webview);
+  const hasWebView2 = !!(window.chrome && window.chrome.webview);
+  const hasWebKit = !!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.scream);
+  const hasWebView = hasWebView2 || hasWebKit;
   const isHost = !isPreview && (qs.get('host') === '1' || hasWebView);
   const isStandalone = !isHost && !isPreview;
 
@@ -35,8 +37,10 @@ export function createHostBridge(callbacks) {
 
   const postToHost = (obj) => {
     const str = JSON.stringify(obj);
-    if (isHost && hasWebView) {
+    if (isHost && hasWebView2) {
       window.chrome.webview.postMessage(str);
+    } else if (isHost && hasWebKit) {
+      window.webkit.messageHandlers.scream.postMessage(str);
     } else if (isPreview && window.parent && window.parent !== window) {
       window.parent.postMessage(str, '*');
     }
@@ -269,8 +273,12 @@ export function createHostBridge(callbacks) {
       const stream = out.captureStream(30);
       const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
         ? 'video/webm;codecs=vp9'
-        : 'video/webm';
-      const recorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 3_500_000 });
+        : (MediaRecorder.isTypeSupported('video/webm')
+          ? 'video/webm'
+          : (MediaRecorder.isTypeSupported('video/mp4') ? 'video/mp4' : ''));
+      const outExt = mime.startsWith('video/mp4') ? 'mp4' : 'webm';
+      const recOpts = mime ? { mimeType: mime, videoBitsPerSecond: 3_500_000 } : { videoBitsPerSecond: 3_500_000 };
+      const recorder = new MediaRecorder(stream, recOpts);
       const chunks = [];
       recorder.ondataavailable = (ev) => { if (ev.data && ev.data.size > 0) chunks.push(ev.data); };
 
@@ -285,10 +293,10 @@ export function createHostBridge(callbacks) {
 
       recorder.onstop = () => {
         stopped = true;
-        const blob = new Blob(chunks, { type: mime });
+        const blob = new Blob(chunks, { type: mime || 'video/webm' });
         const reader = new FileReader();
         reader.onloadend = () => {
-          postToHost({ t: 'recordResult', ok: true, ext: 'webm', data: reader.result });
+          postToHost({ t: 'recordResult', ok: true, ext: outExt, data: reader.result });
         };
         reader.readAsDataURL(blob);
       };
@@ -386,8 +394,11 @@ export function createHostBridge(callbacks) {
     renderDemoDom();
   }
 
-  if (isHost && hasWebView) {
+  if (isHost && hasWebView2) {
     window.chrome.webview.addEventListener('message', (ev) => handleIncoming(ev.data));
+  }
+  if (isHost && hasWebKit) {
+    window.__screamReceive = (raw) => handleIncoming(raw);
   }
   window.addEventListener('message', (ev) => handleIncoming(ev.data));
   if (!isHost && typeof window.addEventListener === 'function') {
