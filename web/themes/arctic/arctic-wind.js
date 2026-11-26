@@ -1,17 +1,11 @@
 /**
- * Studio Ghibli Anime Wind Ribbon Controller (Subtle Gust Scheduler)
- * Keeps the meadow calm and uncluttered most of the time; every 6-12 seconds
- * a single gentle breeze gust sweeps across, spawning 1-2 whisper-delicate
- * translucent wind ribbons that glide smoothly along WIND_DIR and dissolve.
- *
- * Packs up to MAX_WIND_RIBBONS into 3 GPU uniform vec4 arrays:
- *   uWindA[i] = (ox, oy, angle, headX)
- *   uWindB[i] = (length, amp, freq, phase)
- *   uWindC[i] = (curlX, curlSign, curlR, lifeAlpha)
+ * Arctic Wind Ribbon Controller (Whisper-Delicate Polar Gust Scheduler)
+ * Periodically sweeps 1-2 delicate translucent snow-wind ribbons along WIND_DIR,
+ * packed into 3 GPU uniform vec4 arrays (uWindA, uWindB, uWindC).
  */
 export const MAX_WIND_RIBBONS = 4;
 
-const BASE_WIND_ANGLE = Math.atan2(0.530, 0.848); // Matches WIND_DIR in meadow-shader.js
+const BASE_WIND_ANGLE = Math.atan2(0.530, 0.848); // Matches WIND_DIR in arctic-shader.js
 
 const easeOutCubic = (u) => 1 - Math.pow(1 - u, 3);
 const easeInOutSine = (u) => 0.5 - 0.5 * Math.cos(Math.PI * u);
@@ -25,7 +19,7 @@ export function createWindRibbonSystem() {
     active: false,
     delay: 0,
     age: 0,
-    duration: 3.6,
+    duration: 3.4,
     ox: 0,
     oy: 0,
     angle: BASE_WIND_ANGLE,
@@ -37,11 +31,10 @@ export function createWindRibbonSystem() {
     curlX: 200,
     curlSign: 0,
     curlR: 17,
-    peakAlpha: 0.22
+    peakAlpha: 0.24
   }));
 
-  // First subtle breeze arrives softly ~2.2s after launch; afterwards calm pauses of 6.5-12.5s
-  let gustCooldown = 2.2;
+  let gustCooldown = 2.0;
   let lastLane = -1;
 
   function allocSlot() {
@@ -54,24 +47,22 @@ export function createWindRibbonSystem() {
     slot.oy = anchorY;
     slot.angle = baseAng + (Math.random() - 0.5) * 0.07;
 
-    slot.length = (220 + Math.random() * 125) * sc;
-    slot.travelDist = (480 + Math.random() * 260) * sc;
+    slot.length = (220 + Math.random() * 130) * sc;
+    slot.travelDist = (490 + Math.random() * 270) * sc;
     slot.amp = (8 + Math.random() * 7) * sc;
     slot.freq = (0.012 + Math.random() * 0.005) / sc;
     slot.phase = Math.random() * Math.PI * 2;
 
-    // Rare, understated anime curl flourish (~35% on primary ribbon only)
-    const hasCurl = allowCurl && Math.random() < 0.35;
+    const hasCurl = allowCurl && Math.random() < 0.38;
     slot.curlSign = hasCurl ? (Math.random() < 0.5 ? -1 : 1) : 0;
     slot.curlR = (14 + Math.random() * 6.5) * sc;
     slot.curlX = slot.travelDist * (0.36 + Math.random() * 0.22);
 
-    const speedFactor = Math.max(0.55, Math.min(1.65, 0.72 + flow * 0.30));
-    slot.duration = (3.2 + Math.random() * 1.25) / speedFactor;
+    const speedFactor = Math.max(0.55, Math.min(1.75, 0.72 + flow * 0.32));
+    slot.duration = (3.1 + Math.random() * 1.2) / speedFactor;
     slot.age = 0;
     slot.delay = delaySec;
-    // Whisper-delicate translucent opacity (refined & airy, never stark)
-    slot.peakAlpha = 0.19 + Math.random() * 0.075;
+    slot.peakAlpha = 0.20 + Math.random() * 0.08;
     slot.active = delaySec <= 0;
   }
 
@@ -87,19 +78,16 @@ export function createWindRibbonSystem() {
     const ang = BASE_WIND_ANGLE + (Math.random() - 0.5) * 0.12;
 
     const s1 = allocSlot();
-    if (s1) {
-      scheduleRibbon(s1, W, H, flow, ox, oy, ang, 0, true);
-    }
+    if (s1) scheduleRibbon(s1, W, H, flow, ox, oy, ang, 0, true);
 
-    // 45% of gusts carry a gentle companion breeze trailing slightly offset ~0.55s later
-    if (Math.random() < 0.45) {
+    if (Math.random() < 0.48) {
       const s2 = allocSlot();
       if (s2) {
         const perpOff = (Math.random() < 0.5 ? -1 : 1) * (58 + Math.random() * 54) * sc;
         const ox2 = ox - Math.sin(ang) * perpOff + Math.cos(ang) * (35 * sc);
         const oy2 = oy + Math.cos(ang) * perpOff + Math.sin(ang) * (35 * sc);
-        scheduleRibbon(s2, W, H, flow, ox2, oy2, ang, 0.48 + Math.random() * 0.35, false);
-        s2.peakAlpha *= 0.82;
+        scheduleRibbon(s2, W, H, flow, ox2, oy2, ang, 0.45 + Math.random() * 0.35, false);
+        s2.peakAlpha *= 0.84;
       }
     }
   }
@@ -110,12 +98,11 @@ export function createWindRibbonSystem() {
     bufB.fill(0);
     bufC.fill(0);
 
-    // Calm interval between occasional gusts (6.5-12.5s at normal wind)
     if (f > 0.05) {
-      gustCooldown -= dt * (0.45 + Math.min(2.0, f) * 0.55);
+      gustCooldown -= dt * (0.48 + Math.min(2.0, f) * 0.52);
       if (gustCooldown <= 0) {
         triggerGust(W, H, f);
-        gustCooldown = 6.5 + Math.random() * 6.0;
+        gustCooldown = 5.5 + Math.random() * 5.5;
       }
     }
 
@@ -139,7 +126,6 @@ export function createWindRibbonSystem() {
         continue;
       }
 
-      // Lazy, airy glide with soft gradual fade-in (26%) and misty fade-out (44%)
       const headX = (easeInOutSine(u) * 0.52 + easeOutCubic(u) * 0.48) * s.travelDist + s.length * 0.22;
       const fi = Math.min(1, u / 0.26);
       const fo = Math.min(1, (1 - u) / 0.44);
@@ -166,10 +152,5 @@ export function createWindRibbonSystem() {
     }
   }
 
-  return {
-    step,
-    bufA,
-    bufB,
-    bufC
-  };
+  return { step, bufA, bufB, bufC };
 }

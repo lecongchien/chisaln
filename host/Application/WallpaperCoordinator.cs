@@ -125,7 +125,7 @@ namespace Scream.Application
             if (_webEnv == null) return;
 
             var theme = _store.GetTheme(_store.Current.Theme);
-            string page = theme?.Page ?? "beach.html";
+            string page = theme?.Page ?? "arctic.html";
             string query = BuildThemeQuery(_store.Current.Theme);
             Screen[] targets = _store.Current.MultiMonitor
                 ? Screen.AllScreens
@@ -138,6 +138,7 @@ namespace Scream.Application
                     _store,
                     _webEnv,
                     scr,
+                    theme?.Id ?? _store.Current.Theme,
                     page,
                     query,
                     _manualPause,
@@ -212,14 +213,15 @@ namespace Scream.Application
                         break;
 
                     case "theme":
-                        string newTheme = root.TryGetProperty("id", out var idEl) ? idEl.GetString() ?? "beach" : "beach";
+                        string newTheme = root.TryGetProperty("id", out var idEl) ? idEl.GetString() ?? "arctic" : "arctic";
                         var def = _store.GetTheme(newTheme);
                         if (def != null)
                         {
                             _store.Current.Theme = def.Id;
                             ScheduleSave();
                             string query = BuildThemeQuery(def.Id);
-                            foreach (var wf in _wallpapers) wf.NavigateToPage(def.Page, query);
+                            var effectiveParams = _store.GetEffectiveParams(def.Id);
+                            foreach (var wf in _wallpapers) wf.SwitchTheme(def.Id, def.Page, query, effectiveParams);
                             SyncTrayState();
                             PushStatusToSettings();
                         }
@@ -471,8 +473,8 @@ namespace Scream.Application
         private void ToggleMeadowNight()
         {
             string activeTheme = _store.Current.Theme;
-            if (activeTheme != "beach" && activeTheme != "meadow" && activeTheme != "castle" && activeTheme != "skyship" && activeTheme != "seatrain")
-                activeTheme = "meadow";
+            if (activeTheme != "arctic" && activeTheme != "skyship" && activeTheme != "seatrain")
+                activeTheme = "arctic";
 
             var cur = _store.GetEffectiveParams(activeTheme);
             double curMode = cur.TryGetValue("timeMode", out var v) ? v : 0;

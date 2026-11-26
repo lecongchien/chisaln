@@ -5,7 +5,7 @@ namespace Scream.Domain
     /// <summary>User-persisted application preferences (pure domain entity).</summary>
     internal sealed class AppSettings
     {
-        public string Theme { get; set; } = "beach";
+        public string Theme { get; set; } = "arctic";
         public string Lang { get; set; } = "vi";
         public bool MultiMonitor { get; set; } = false;
         public bool AutoPause { get; set; } = true;

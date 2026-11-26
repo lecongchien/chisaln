@@ -38,9 +38,11 @@ final class WallpaperWindowController: NSObject, WKNavigationDelegate {
     private var fgTimer: Timer?
     private var mouseTimer: Timer?
 
+    private var currentThemeId: String
     private var currentPage: String
     private var manualPause: Bool
     private var autoPauseEnabled: Bool
+    private var stageLoaded = false
     private var pageReady = false
     private var shuttingDown = false
     private var lastIconsJson = ""
@@ -59,6 +61,7 @@ final class WallpaperWindowController: NSObject, WKNavigationDelegate {
     init(
         store: SettingsStore,
         screen: NSScreen,
+        initialThemeId: String,
         initialPage: String,
         manualPause: Bool,
         autoPauseEnabled: Bool,
@@ -66,6 +69,7 @@ final class WallpaperWindowController: NSObject, WKNavigationDelegate {
     ) {
         self.store = store
         self.targetScreen = screen
+        self.currentThemeId = initialThemeId.isEmpty ? "arctic" : initialThemeId
         self.currentPage = initialPage
         self.manualPause = manualPause
         self.autoPauseEnabled = autoPauseEnabled
@@ -108,22 +112,44 @@ final class WallpaperWindowController: NSObject, WKNavigationDelegate {
 
     func show() {
         window.orderFrontRegardless()
-        navigate(to: currentPage)
+        loadStage(themeId: currentThemeId, page: currentPage)
         startTimers()
     }
 
-    func navigate(to page: String) {
+    func loadStage(themeId: String, page: String) {
+        currentThemeId = themeId.isEmpty ? "arctic" : themeId
         currentPage = page
+        stageLoaded = false
         pageReady = false
         lastIconsJson = ""
         lastPauseState = -1
-        if let url = URL(string: "scream://app/\(page)?host=1") {
+        let q = store.current.renderQuality
+        let encoded = currentThemeId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "arctic"
+        if let url = URL(string: "scream://app/stage.html?host=1&theme=\(encoded)&q=\(q)") {
             webView.load(URLRequest(url: url))
         }
     }
 
+    func switchTheme(id: String, page: String, settings: [String: Double]) {
+        currentThemeId = id.isEmpty ? "arctic" : id
+        currentPage = page
+        if stageLoaded {
+            let payload: [String: Any] = [
+                "t": "switchTheme",
+                "id": currentThemeId,
+                "page": currentPage,
+                "settings": settings
+            ]
+            if let json = serializeDict(payload) {
+                postJson(json)
+                return
+            }
+        }
+        loadStage(themeId: currentThemeId, page: currentPage)
+    }
+
     func reload() {
-        navigate(to: currentPage)
+        loadStage(themeId: currentThemeId, page: currentPage)
     }
 
     func setManualPause(_ paused: Bool) {
@@ -204,6 +230,7 @@ final class WallpaperWindowController: NSObject, WKNavigationDelegate {
 
         switch type {
         case "ready":
+            stageLoaded = true
             pageReady = true
             sendThemeSettings(store.getEffectiveParams(for: store.current.theme))
             sendMoonConfig(mode: store.current.moonMode, date: store.current.moonDate)

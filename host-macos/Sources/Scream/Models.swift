@@ -2,7 +2,7 @@ import Foundation
 
 /// User-persisted application preferences (100% JSON-compatible with Windows AppSettings).
 struct AppSettings: Codable {
-    var theme: String = "beach"
+    var theme: String = "arctic"
     var lang: String = "vi"
     var multiMonitor: Bool = false
     var autoPause: Bool = true
@@ -28,7 +28,7 @@ struct AppSettings: Codable {
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        theme = try c.decodeIfPresent(String.self, forKey: .theme) ?? "beach"
+        theme = try c.decodeIfPresent(String.self, forKey: .theme) ?? "arctic"
         lang = try c.decodeIfPresent(String.self, forKey: .lang) ?? "vi"
         multiMonitor = try c.decodeIfPresent(Bool.self, forKey: .multiMonitor) ?? false
         autoPause = try c.decodeIfPresent(Bool.self, forKey: .autoPause) ?? true

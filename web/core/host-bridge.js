@@ -26,6 +26,7 @@ const SAMPLE_LAYOUT = [
 export function createHostBridge(callbacks) {
   const qs = new URLSearchParams(location.search);
   const isPreview = qs.get('preview') === '1';
+  const isStageChild = qs.get('stage') === '1';
   const hasWebView2 = !!(window.chrome && window.chrome.webview);
   const hasWebKit = !!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.scream);
   const hasWebView = hasWebView2 || hasWebKit;
@@ -39,7 +40,9 @@ export function createHostBridge(callbacks) {
 
   const postToHost = (obj) => {
     const str = JSON.stringify(obj);
-    if (isHost && hasWebView2) {
+    if (isStageChild && window.parent && window.parent !== window) {
+      window.parent.postMessage(str, '*');
+    } else if (isHost && hasWebView2) {
       window.chrome.webview.postMessage(str);
     } else if (isHost && hasWebKit) {
       window.webkit.messageHandlers.scream.postMessage(str);
@@ -401,10 +404,10 @@ export function createHostBridge(callbacks) {
     renderDemoDom();
   }
 
-  if (isHost && hasWebView2) {
+  if (!isStageChild && isHost && hasWebView2) {
     window.chrome.webview.addEventListener('message', (ev) => handleIncoming(ev.data));
   }
-  if (isHost && hasWebKit) {
+  if (!isStageChild && isHost && hasWebKit) {
     window.__screamReceive = (raw) => handleIncoming(raw);
   }
   window.addEventListener('message', (ev) => handleIncoming(ev.data));

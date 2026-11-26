@@ -12,7 +12,7 @@ const hasWebView2 = !!(window.chrome && window.chrome.webview);
 const hasWebKit = !!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.scream);
 const hasHost = hasWebView2 || hasWebKit;
 const APPEARANCE_KEY = 'scream.ui.appearance';
-const MOON_THEMES = new Set(['seatrain', 'begonia', 'skyship', 'castle', 'meadow']);
+const MOON_THEMES = new Set(['seatrain', 'begonia', 'skyship', 'arctic']);
 const darkMedia = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
 
 // Dependent controls: auto-dimmed when parent toggle is OFF, or hidden cleanly per camera viewMode
@@ -21,7 +21,8 @@ const PARAM_DEPS = {
   warp: { parent: 'adaptive', min: 0.5 },
   margin: { parent: 'adaptive', min: 0.5 },
   radius: { parent: 'adaptive', min: 0.5 },
-  castleSpeed: { parent: 'showCastle', min: 0.5 },
+  mischief: { parent: 'showFriends', min: 0.5 },
+  showBubbles: { parent: 'showFriends', min: 0.5 },
   // Sea Railway exterior-only controls (hidden cleanly in Inside Cabin view)
   clouds: { parent: 'viewMode', equals: 0, hide: true },
   ripple: { parent: 'viewMode', equals: 0, hide: true },
@@ -40,7 +41,7 @@ const PARAM_DEPS = {
 
 const state = {
   manifest: null,
-  themeId: 'beach',
+  themeId: 'arctic',
   lang: 'vi',
   activeTab: 'scene',
   appearance: loadSavedAppearance(), // 'auto' | 'light' | 'dark'
@@ -72,6 +73,7 @@ const state = {
   screenCount: 1,
   iconCount: 12,
   latestIconsMsg: null,
+  previewStageLoaded: false,
   previewReady: false,
   previewPage: '',
   wallpaperReady: !hasHost,
@@ -84,6 +86,7 @@ const state = {
 const el = {
   previewShell: document.getElementById('preview-shell'),
   previewFrame: document.getElementById('preview-frame'),
+  previewPoster: document.getElementById('preview-poster'),
   previewLoading: document.getElementById('preview-loading'),
   previewLoadingText: document.getElementById('preview-loading-text'),
   previewPausedOverlay: document.getElementById('preview-paused-overlay'),
@@ -202,10 +205,19 @@ function sendToHost(obj) {
   }
 }
 
-function sendToPreview(obj) {
-  if (el.previewFrame.contentWindow && state.previewReady) {
+function sendToPreview(obj, { allowStage = false } = {}) {
+  if (el.previewFrame.contentWindow && (state.previewReady || (allowStage && state.previewStageLoaded))) {
     el.previewFrame.contentWindow.postMessage(JSON.stringify(obj), '*');
   }
+}
+
+function setPreviewPoster(themeId, visible) {
+  if (!el.previewPoster) return;
+  const thumb = THEME_THUMBS[themeId] || '';
+  if (thumb && el.previewPoster.getAttribute('src') !== thumb) {
+    el.previewPoster.setAttribute('src', thumb);
+  }
+  el.previewPoster.classList.toggle('hidden', !visible || !thumb);
 }
 
 let toastTimer = null;
@@ -262,6 +274,7 @@ function formatValue(param, val) {
 }
 
 let previewDeferTimer = null;
+let previewSpinnerTimer = null;
 
 function buildPreviewQuery(themeObj) {
   const bag = ensureThemeParams(themeObj);
@@ -276,27 +289,67 @@ function loadPreviewForTheme(themeObj, forceReload = false) {
   if (!themeObj) return;
   clearTimeout(previewDeferTimer);
   previewDeferTimer = null;
+  clearTimeout(previewSpinnerTimer);
+  previewSpinnerTimer = null;
   state.pendingPreview = null;
+
+  el.previewLoading.classList.remove('is-error');
+  el.previewLoadingText.textContent = t('loadingPreview');
 
   if (!forceReload && state.previewPage === themeObj.page) {
     if (state.previewReady) {
       el.previewLoading.classList.add('hidden');
+      setPreviewPoster(themeObj.id, false);
       syncPreviewState();
+    } else {
+      setPreviewPoster(themeObj.id, true);
     }
     return;
   }
+
+  // Fast path: stage.html is already live -> instant 0ms switch without reloading WebGL2!
+  if (!forceReload && state.previewStageLoaded) {
+    state.previewPage = themeObj.page;
+    state.previewReady = false;
+    const bag = ensureThemeParams(themeObj);
+    // Keep poster source prepped in case target theme hasn't finished background pre-warming yet
+    const thumb = THEME_THUMBS[themeObj.id] || '';
+    if (thumb && el.previewPoster && el.previewPoster.getAttribute('src') !== thumb) {
+      el.previewPoster.setAttribute('src', thumb);
+    }
+    sendToPreview({
+      t: 'switchTheme',
+      id: themeObj.id,
+      page: themeObj.page,
+      query: buildPreviewQuery(themeObj),
+      settings: bag
+    }, { allowStage: true });
+
+    // Only show poster + sleek corner indicator if the target theme hasn't finished pre-warming yet
+    previewSpinnerTimer = setTimeout(() => {
+      previewSpinnerTimer = null;
+      if (!state.previewReady) {
+        setPreviewPoster(themeObj.id, true);
+        el.previewLoading.classList.remove('hidden');
+      }
+    }, 160);
+    return;
+  }
+
+  state.previewStageLoaded = false;
   state.previewReady = false;
   state.previewPage = themeObj.page;
+  setPreviewPoster(themeObj.id, true);
   el.previewLoading.classList.remove('hidden');
   const q = buildPreviewQuery(themeObj);
   const bust = forceReload ? `&r=${Date.now()}` : '';
-  el.previewFrame.src = `${themeObj.page}?preview=1${q}${bust}`;
+  el.previewFrame.src = `stage.html?preview=1&theme=${encodeURIComponent(themeObj.id)}${q}${bust}`;
 }
 
 /**
  * Coordinates preview iframe startup with the desktop wallpaper so both do not fight
- * over Chromium's single GPU shader compiler simultaneously. Once the desktop finishes
- * compiling (and warms WebView2's shader disk cache), preview loads with near-instant cache hit!
+ * over Chromium's single GPU shader compiler simultaneously. Displays the high-res
+ * painted artwork instantly (0ms) while WebGL2 compiles asynchronously in parallel.
  */
 function schedulePreviewLoad(themeObj, { forceReload = false, waitDesktopMs = 0 } = {}) {
   if (!themeObj) return;
@@ -307,6 +360,7 @@ function schedulePreviewLoad(themeObj, { forceReload = false, waitDesktopMs = 0 
   clearTimeout(previewDeferTimer);
   state.pendingPreview = themeObj;
   state.previewReady = false;
+  setPreviewPoster(themeObj.id, true);
   el.previewLoading.classList.remove('hidden');
   previewDeferTimer = setTimeout(() => {
     previewDeferTimer = null;
@@ -660,10 +714,9 @@ function renderThemes() {
       if (state.themeId === theme.id) return;
       state.themeId = theme.id;
       state.lastResetSnapshot = null;
-      if (hasHost) state.wallpaperReady = false;
       sendToHost({ t: 'theme', id: theme.id });
       renderAll({ preserveScroll: false });
-      schedulePreviewLoad(theme, { waitDesktopMs: hasHost ? 1200 : 0 });
+      loadPreviewForTheme(theme, false);
     });
     el.themeGrid.appendChild(btn);
   }
@@ -1239,11 +1292,36 @@ function bindEvents() {
     if (typeof msg === 'string') {
       try { msg = JSON.parse(msg); } catch { return; }
     }
-    if (msg && msg.t === 'ready') {
+    if (!msg || typeof msg !== 'object') return;
+
+    if (msg.t === 'stageReady') {
+      state.previewStageLoaded = true;
+      const curTheme = getThemeObj();
+      if (curTheme && msg.theme && msg.theme !== curTheme.id) {
+        sendToPreview({
+          t: 'switchTheme',
+          id: curTheme.id,
+          page: curTheme.page,
+          query: buildPreviewQuery(curTheme),
+          settings: ensureThemeParams(curTheme)
+        }, { allowStage: true });
+      }
+    } else if (msg.t === 'ready') {
+      // Ignore stale ready events from a theme the user already clicked away from
+      if (msg.theme && state.themeId && msg.theme !== state.themeId) return;
+      clearTimeout(previewSpinnerTimer);
+      previewSpinnerTimer = null;
+      state.previewStageLoaded = true;
       state.previewReady = true;
+      el.previewLoading.classList.remove('is-error');
       el.previewLoading.classList.add('hidden');
+      setPreviewPoster(state.themeId, false);
       syncPreviewState();
-    } else if (msg && msg.t === 'sceneError') {
+    } else if (msg.t === 'sceneError') {
+      clearTimeout(previewSpinnerTimer);
+      previewSpinnerTimer = null;
+      el.previewLoading.classList.add('is-error');
+      el.previewLoading.classList.remove('hidden');
       el.previewLoadingText.textContent = `Lỗi WebGL2: ${msg.msg || 'Unknown'}`;
     }
   });
@@ -1307,7 +1385,7 @@ function bindEvents() {
           renderAll({ preserveScroll: prevTheme === state.themeId });
           const themeObj = getThemeObj();
           if (themeObj && state.previewPage !== themeObj.page) {
-            schedulePreviewLoad(themeObj, { waitDesktopMs: state.wallpaperReady ? 0 : 1800 });
+            schedulePreviewLoad(themeObj, { waitDesktopMs: state.wallpaperReady ? 0 : 250 });
           } else {
             syncPreviewState();
           }
@@ -1406,7 +1484,7 @@ async function boot() {
     state.manifest = await res.json();
 
     if (hasHost) {
-      // Wait for C# 'init' before loading WebGL preview -> ZERO double-load flash!
+      // Wait for C# 'init' (~5ms) before setting poster or WebGL preview -> ZERO wrong-theme flash!
       renderThemes();
       applyStaticCopy();
       sendToHost({ t: 'hello' });

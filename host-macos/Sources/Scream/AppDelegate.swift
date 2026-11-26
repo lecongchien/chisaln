@@ -92,7 +92,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         disposeWallpapers()
 
         let theme = store.getTheme(store.current.theme)
-        let page = theme?.page ?? "beach.html"
+        let page = theme?.page ?? "arctic.html"
         let allScreens = NSScreen.screens
         guard !allScreens.isEmpty else { return }
         let targets: [NSScreen] = store.current.multiMonitor ? allScreens : [NSScreen.main ?? allScreens[0]]
@@ -101,6 +101,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let wc = WallpaperWindowController(
                 store: store,
                 screen: scr,
+                initialThemeId: theme?.id ?? store.current.theme,
                 initialPage: page,
                 manualPause: manualPause,
                 autoPauseEnabled: store.current.autoPause,
@@ -168,11 +169,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             pushFullInitToSettings()
 
         case "theme":
-            let newId = root["id"] as? String ?? "beach"
+            let newId = root["id"] as? String ?? "arctic"
             if let def = store.getTheme(newId) {
                 store.current.theme = def.id
                 scheduleSave()
-                for w in wallpapers { w.navigate(to: def.page) }
+                let effective = store.getEffectiveParams(for: def.id)
+                for w in wallpapers { w.switchTheme(id: def.id, page: def.page, settings: effective) }
                 syncMenuBarState()
                 pushStatusToSettings()
             }

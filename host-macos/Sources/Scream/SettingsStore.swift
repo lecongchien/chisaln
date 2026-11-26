@@ -100,7 +100,11 @@ final class SettingsStore {
             setParam(themeId: "seatrain", key: "viewMode", value: 1)
         }
 
-        if getTheme(current.theme) == nil, let first = themes.first {
+        if let resolved = getTheme(current.theme) {
+            if current.theme.caseInsensitiveCompare(resolved.id) != .orderedSame {
+                current.theme = resolved.id
+            }
+        } else if let first = themes.first {
             current.theme = first.id
         }
         if current.lang != "vi" && current.lang != "en" {

@@ -179,7 +179,12 @@ namespace Scream.Infrastructure
                 SetParam("seatrain", "viewMode", 1);
             }
 
-            if (GetTheme(Current.Theme) == null && _themes.Count > 0)
+            var resolvedTheme = GetTheme(Current.Theme);
+            if (resolvedTheme != null && !string.Equals(Current.Theme, resolvedTheme.Id, StringComparison.OrdinalIgnoreCase))
+            {
+                Current.Theme = resolvedTheme.Id;
+            }
+            else if (resolvedTheme == null && _themes.Count > 0)
             {
                 Current.Theme = _themes[0].Id;
             }

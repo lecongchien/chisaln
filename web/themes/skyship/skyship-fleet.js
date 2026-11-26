@@ -6,7 +6,7 @@
  *   - Soaring Winged Sky Glider banking with real roll tilt, SDF icon avoidance & wingtip wind trails
  */
 import { getSpriteMaxWidth } from '../../core/field-engine.js';
-import { createSmokePlume } from '../castle/castle-smoke.js';
+import { createSmokePlume } from './skyship-smoke.js';
 
 function loadSprite(src, onReady) {
   const s = { img: new Image(), ready: false };

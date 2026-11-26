@@ -6,7 +6,8 @@
 import {
   AdaptiveField,
   FIELD_STEP,
-  createShaderProgram,
+  startShaderProgram,
+  pollShaderProgram,
   createFieldTexture,
   uploadFieldTexture,
   createSeamlessNoiseTexture,
@@ -52,44 +53,60 @@ if (!gl) {
 
 gl.getExtension('OES_texture_half_float_linear');
 
-const prog = createShaderProgram(gl, SKYSHIP_FS);
-const U = {
-  uFA: gl.getUniformLocation(prog, 'uFA'),
-  uFB: gl.getUniformLocation(prog, 'uFB'),
-  uNoise: gl.getUniformLocation(prog, 'uNoise'),
-  uGalleonHullTex: gl.getUniformLocation(prog, 'uGalleonHullTex'),
-  uGalleonSailsTex: gl.getUniformLocation(prog, 'uGalleonSailsTex'),
-  uGalleonSailMap: gl.getUniformLocation(prog, 'uGalleonSailMap'),
-  uSkiffHullTex: gl.getUniformLocation(prog, 'uSkiffHullTex'),
-  uSkiffSailsTex: gl.getUniformLocation(prog, 'uSkiffSailsTex'),
-  uSkiffSailMap: gl.getUniformLocation(prog, 'uSkiffSailMap'),
-  uFgTex: gl.getUniformLocation(prog, 'uFgTex'),
-  uMoonTex: gl.getUniformLocation(prog, 'uMoonTex'),
-  uRes: gl.getUniformLocation(prog, 'uRes'),
-  uGrid: gl.getUniformLocation(prog, 'uGrid'),
-  uStep: gl.getUniformLocation(prog, 'uStep'),
-  uDpr: gl.getUniformLocation(prog, 'uDpr'),
-  uMix: gl.getUniformLocation(prog, 'uMix'),
-  uTime: gl.getUniformLocation(prog, 'uTime'),
-  uWindTime: gl.getUniformLocation(prog, 'uWindTime'),
-  uWindSpeed: gl.getUniformLocation(prog, 'uWindSpeed'),
-  uAdaptive: gl.getUniformLocation(prog, 'uAdaptive'),
-  uCloudSea: gl.getUniformLocation(prog, 'uCloudSea'),
-  uSunset: gl.getUniformLocation(prog, 'uSunset'),
-  uNight: gl.getUniformLocation(prog, 'uNight'),
-  uMoonOcc: gl.getUniformLocation(prog, 'uMoonOcc'),
-  uMoonVis: gl.getUniformLocation(prog, 'uMoonVis'),
-  uGalleonReady: gl.getUniformLocation(prog, 'uGalleonReady'),
-  uSkiffReady: gl.getUniformLocation(prog, 'uSkiffReady'),
-  uShowEscort: gl.getUniformLocation(prog, 'uShowEscort'),
-  uShowMeteors: gl.getUniformLocation(prog, 'uShowMeteors'),
-  uMoonPhase: gl.getUniformLocation(prog, 'uMoonPhase'),
-  uSeed: gl.getUniformLocation(prog, 'uSeed'),
-  uGalleonRect: gl.getUniformLocation(prog, 'uGalleonRect'),
-  uGalleonTilt: gl.getUniformLocation(prog, 'uGalleonTilt'),
-  uSkiffRect: gl.getUniformLocation(prog, 'uSkiffRect'),
-  uSkiffTilt: gl.getUniformLocation(prog, 'uSkiffTilt')
-};
+function bindSkyshipUniforms(program) {
+  return {
+    uFA: gl.getUniformLocation(program, 'uFA'),
+    uFB: gl.getUniformLocation(program, 'uFB'),
+    uNoise: gl.getUniformLocation(program, 'uNoise'),
+    uGalleonHullTex: gl.getUniformLocation(program, 'uGalleonHullTex'),
+    uGalleonSailsTex: gl.getUniformLocation(program, 'uGalleonSailsTex'),
+    uGalleonSailMap: gl.getUniformLocation(program, 'uGalleonSailMap'),
+    uSkiffHullTex: gl.getUniformLocation(program, 'uSkiffHullTex'),
+    uSkiffSailsTex: gl.getUniformLocation(program, 'uSkiffSailsTex'),
+    uSkiffSailMap: gl.getUniformLocation(program, 'uSkiffSailMap'),
+    uFgTex: gl.getUniformLocation(program, 'uFgTex'),
+    uMoonTex: gl.getUniformLocation(program, 'uMoonTex'),
+    uRes: gl.getUniformLocation(program, 'uRes'),
+    uGrid: gl.getUniformLocation(program, 'uGrid'),
+    uStep: gl.getUniformLocation(program, 'uStep'),
+    uDpr: gl.getUniformLocation(program, 'uDpr'),
+    uMix: gl.getUniformLocation(program, 'uMix'),
+    uTime: gl.getUniformLocation(program, 'uTime'),
+    uWindTime: gl.getUniformLocation(program, 'uWindTime'),
+    uWindSpeed: gl.getUniformLocation(program, 'uWindSpeed'),
+    uAdaptive: gl.getUniformLocation(program, 'uAdaptive'),
+    uCloudSea: gl.getUniformLocation(program, 'uCloudSea'),
+    uSunset: gl.getUniformLocation(program, 'uSunset'),
+    uNight: gl.getUniformLocation(program, 'uNight'),
+    uMoonOcc: gl.getUniformLocation(program, 'uMoonOcc'),
+    uMoonVis: gl.getUniformLocation(program, 'uMoonVis'),
+    uGalleonReady: gl.getUniformLocation(program, 'uGalleonReady'),
+    uSkiffReady: gl.getUniformLocation(program, 'uSkiffReady'),
+    uShowEscort: gl.getUniformLocation(program, 'uShowEscort'),
+    uShowMeteors: gl.getUniformLocation(program, 'uShowMeteors'),
+    uMoonPhase: gl.getUniformLocation(program, 'uMoonPhase'),
+    uSeed: gl.getUniformLocation(program, 'uSeed'),
+    uGalleonRect: gl.getUniformLocation(program, 'uGalleonRect'),
+    uGalleonTilt: gl.getUniformLocation(program, 'uGalleonTilt'),
+    uSkiffRect: gl.getUniformLocation(program, 'uSkiffRect'),
+    uSkiffTilt: gl.getUniformLocation(program, 'uSkiffTilt')
+  };
+}
+
+// Kick off non-blocking parallel shader compilation immediately so CPU init overlaps GPU compile
+const progJob = startShaderProgram(gl, SKYSHIP_FS);
+let prog = null;
+let U = null;
+let readyNotified = false;
+
+function ensureProgramReady(forceSync = false) {
+  if (prog) return true;
+  const linked = pollShaderProgram(gl, progJob, forceSync);
+  if (!linked) return false;
+  prog = linked;
+  U = bindSkyshipUniforms(prog);
+  return true;
+}
 
 const field = new AdaptiveField(FIELD_STEP);
 const noiseTex = createSeamlessNoiseTexture(gl, 256);
@@ -221,7 +238,8 @@ function commitField(animate = true) {
   if (paused) renderFrame(simTime);
 }
 
-function renderFrame(t, upload2d = true) {
+function renderFrame(t, upload2d = true, forceSync = false) {
+  if (!ensureProgramReady(forceSync)) return false;
   if (upload2d) {
     fleet.renderAndUpload(t, {
       W, H,
@@ -322,6 +340,7 @@ function tick(now) {
     perf.resetTiming();
     return;
   }
+  if (!ensureProgramReady(false)) return;
 
   const tgt = targetMoodFromClock();
   if (!moodInitialized) {
@@ -367,6 +386,10 @@ function tick(now) {
   }
 
   renderFrame(simTime, perf.shouldUpload2d(now, needsInitialSettle));
+  if (!readyNotified) {
+    readyNotified = true;
+    bridge.notifyReady();
+  }
   needsInitialSettle = false;
 }
 
@@ -411,7 +434,7 @@ const bridge = createHostBridge({
     if (paused) renderFrame(simTime, false);
   },
   getCanvases: () => ({ glCanvas, overlayCanvas: null }),
-  renderNow: () => renderFrame(simTime)
+  renderNow: () => renderFrame(simTime, true, true)
 });
 
 activeIcons = bridge.getIcons();
@@ -424,5 +447,4 @@ window.addEventListener('resize', () => {
   renderFrame(simTime);
 });
 
-bridge.notifyReady();
 requestAnimationFrame(tick);

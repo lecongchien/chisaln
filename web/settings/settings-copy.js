@@ -194,25 +194,15 @@ export const COPY = {
 };
 
 export const THEME_THUMBS = {
-  beach: './assets/thumb-beach.jpg',
-  meadow: './assets/thumb-meadow.jpg',
-  castle: './assets/thumb-castle.jpg',
+  arctic: './assets/thumb-arctic.jpg',
   skyship: './assets/thumb-skyship.jpg',
   seatrain: './assets/thumb-seatrain.jpg'
 };
 
 export const THEME_SUBTITLES = {
-  beach: {
-    vi: 'Bờ cát uốn quanh icon · Dừa & Kayak',
-    en: 'Shore wraps icons · Palms & Kayak'
-  },
-  meadow: {
-    vi: 'Mây ôm icon · Thả diều & Đêm trăng',
-    en: 'Clouds frame icons · Kite & Moon'
-  },
-  castle: {
-    vi: 'Núi tuyết Alps · Lâu đài & Đàn cừu',
-    en: 'Alps panorama · Castle & Sheep'
+  arctic: {
+    vi: 'Biển băng ôm icon · Gấu ngủ & Cánh cụt',
+    en: 'Glacial sea icons · Bear & Penguin'
   },
   skyship: {
     vi: 'Biển mây ráng chiều · Thuyền buồm bay',

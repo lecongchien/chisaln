@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Scream — Instant Wallpaper Stage</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #14171c;
+    }
+    .stage-layer {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      border: 0;
+      display: block;
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      z-index: 1;
+      transition: opacity 150ms cubic-bezier(0.32, 0.72, 0, 1);
+      will-change: opacity;
+    }
+    .stage-layer.is-under {
+      opacity: 1;
+      visibility: visible;
+      pointer-events: none;
+      z-index: 2;
+    }
+    .stage-layer.is-active {
+      opacity: 1;
+      visibility: visible;
+      pointer-events: auto;
+      z-index: 3;
+    }
+    .stage-layer.is-warming {
+      opacity: 0;
+      visibility: visible;
+      pointer-events: none;
+      z-index: 0;
+    }
+  </style>
+</head>
+<body>
+  <script type="module">
+    const qs = new URLSearchParams(location.search);
+    const isPreview = qs.get('preview') === '1';
+    const hasWebView2 = !!(window.chrome && window.chrome.webview);
+    const hasWebKit = !!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.scream);
+    const isHost = !isPreview && (qs.get('host') === '1' || hasWebView2 || hasWebKit);
+
+    let initialThemeId = qs.get('theme') || 'arctic';
+    let currentQuality = qs.get('q') || 'ultra';
+    let hostPaused = false;
+    let hostPauseManual = false;
+    let latestIcons = null;
+    let latestMoon = null;
+    const settingsByTheme = new Map();
+
+    // Forward child / stage events upward to C# WebView2, macOS WebKit, or Settings parent window
+    function postUp(obj) {
+      const str = JSON.stringify(obj);
+      if (isHost && hasWebView2) {
+        window.chrome.webview.postMessage(str);
+      } else if (isHost && hasWebKit) {
+        window.webkit.messageHandlers.scream.postMessage(str);
+      } else if (window.parent && window.parent !== window) {
+        window.parent.postMessage(str, '*');
+      }
+    }
+
+    function sendToSlot(slot, obj) {
+      const win = slot?.frame?.contentWindow;
+      if (!win) return;
+      try {
+        win.postMessage(JSON.stringify(obj), '*');
+      } catch {
+        // Ignore transient navigation errors
+      }
+    }
+
+    const FALLBACK_THEMES = [
+      { id: 'arctic', page: 'arctic.html' },
+      { id: 'skyship', page: 'skyship.html' },
+      { id: 'seatrain', page: 'seatrain.html' }
+    ];
+
+    let catalog = FALLBACK_THEMES;
+    const slots = new Map();
+    let activeId = null;
+    let outgoingId = null;
+    let hideOutgoingTimer = null;
+    let prewarmTimer = null;
+    let warmingId = null;
+
+    function buildChildSrc(theme, extraQuery = '') {
+      const modeParam = isPreview ? 'preview=1' : 'host=1';
+      let q = extraQuery || '';
+      if (!q.includes('q=')) q += `&q=${encodeURIComponent(currentQuality)}`;
+      return `${theme.page}?${modeParam}&stage=1${q}`;
+    }
+
+    function getOrCreateSlot(theme) {
+      let slot = slots.get(theme.id);
+      if (slot) return slot;
+
+      const frame = document.createElement('iframe');
+      frame.className = 'stage-layer';
+      frame.title = theme.id;
+      frame.setAttribute('tabindex', '-1');
+      document.body.appendChild(frame);
+
+      slot = {
+        id: theme.id,
+        page: theme.page,
+        frame,
+        loaded: false,
+        ready: false,
+        syncedIcons: false,
+        syncedMoon: false,
+        syncedQuality: currentQuality
+      };
+      slots.set(theme.id, slot);
+      return slot;
+    }
+
+    function syncSlotState(slot, { shouldPause, forcePauseManual = false } = {}) {
+      if (!slot || !slot.ready) return;
+      const saved = settingsByTheme.get(slot.id);
+      if (saved) sendToSlot(slot, { t: 'settings', v: saved });
+      if (latestMoon && !slot.syncedMoon) {
+        sendToSlot(slot, latestMoon);
+        slot.syncedMoon = true;
+      }
+      if (slot.syncedQuality !== currentQuality) {
+        sendToSlot(slot, { t: 'quality', v: currentQuality });
+        slot.syncedQuality = currentQuality;
+      }
+      if (latestIcons && !slot.syncedIcons) {
+        sendToSlot(slot, latestIcons);
+        slot.syncedIcons = true;
+      }
+      if (typeof shouldPause === 'boolean') {
+        sendToSlot(slot, { t: 'pause', v: shouldPause, manual: forcePauseManual || hostPauseManual });
+      }
+    }
+
+    function revealActiveSlot(slot) {
+      clearTimeout(hideOutgoingTimer);
+
+      const prevSlot = outgoingId && outgoingId !== slot.id ? slots.get(outgoingId) : null;
+      if (prevSlot) {
+        prevSlot.frame.classList.remove('is-active', 'is-warming');
+        prevSlot.frame.classList.add('is-under');
+      }
+
+      slot.frame.classList.remove('is-under', 'is-warming');
+      slot.frame.classList.add('is-active');
+      syncSlotState(slot, { shouldPause: hostPaused, forcePauseManual: true });
+
+      // Pause and hide outgoing layer immediately after the crisp 150ms crossfade
+      if (prevSlot) {
+        hideOutgoingTimer = setTimeout(() => {
+          hideOutgoingTimer = null;
+          if (prevSlot.id !== activeId) {
+            prevSlot.frame.classList.remove('is-under', 'is-active', 'is-warming');
+            sendToSlot(prevSlot, { t: 'pause', v: true, manual: true });
+          }
+          outgoingId = null;
+        }, 170);
+      }
+
+      postUp({ t: 'ready', theme: slot.id });
+    }
+
+    const FIRST_PREWARM_DELAY = isPreview ? 2400 : 900;
+    const NEXT_PREWARM_DELAY = isPreview ? 1200 : 900;
+
+    function scheduleNextPrewarm(delayMs = NEXT_PREWARM_DELAY) {
+      clearTimeout(prewarmTimer);
+      if (warmingId) return;
+
+      // Only pre-warm after the active scene is already live and smooth
+      const activeSlot = activeId ? slots.get(activeId) : null;
+      if (!activeSlot || !activeSlot.ready) return;
+
+      const nextTheme = catalog.find((t) => {
+        const s = slots.get(t.id);
+        return !s || !s.loaded;
+      });
+      if (!nextTheme) return;
+
+      prewarmTimer = setTimeout(() => {
+        prewarmTimer = null;
+        if (warmingId) return;
+        const slot = getOrCreateSlot(nextTheme);
+        if (slot.loaded) {
+          scheduleNextPrewarm(200);
+          return;
+        }
+        warmingId = nextTheme.id;
+        slot.loaded = true;
+        slot.frame.classList.add('is-warming');
+        slot.frame.src = buildChildSrc(nextTheme);
+      }, delayMs);
+    }
+
+    function switchTheme(themeId, { page = '', query = '', settings = null } = {}) {
+      let theme = catalog.find((t) => t.id === themeId);
+      if (!theme) {
+        theme = page ? { id: themeId, page } : catalog[0];
+      }
+      if (!theme) return;
+
+      if (settings && typeof settings === 'object') {
+        settingsByTheme.set(theme.id, { ...(settingsByTheme.get(theme.id) || {}), ...settings });
+      }
+
+      const prevActiveId = activeId;
+      if (prevActiveId && prevActiveId !== theme.id && slots.get(prevActiveId)?.ready) {
+        outgoingId = prevActiveId;
+      }
+      activeId = theme.id;
+
+      const slot = getOrCreateSlot(theme);
+
+      // Fast path: already pre-warmed -> 0ms instant switch!
+      if (slot.ready) {
+        revealActiveSlot(slot);
+        scheduleNextPrewarm(NEXT_PREWARM_DELAY);
+        return;
+      }
+
+      // Cold path (clicked before background pre-warm finished): mount immediately, keeping previous ready frame underneath
+      clearTimeout(prewarmTimer);
+      if (!slot.loaded) {
+        slot.loaded = true;
+        slot.frame.classList.add('is-warming');
+        slot.frame.src = buildChildSrc(theme, query);
+      }
+    }
+
+    function handleHostMessage(raw) {
+      let msg = raw;
+      if (typeof raw === 'string') {
+        try { msg = JSON.parse(raw); } catch { return; }
+      }
+      if (!msg || typeof msg !== 'object') return;
+
+      const activeSlot = activeId ? slots.get(activeId) : null;
+
+      switch (msg.t) {
+        case 'switchTheme':
+          switchTheme(msg.id, {
+            page: msg.page || '',
+            query: msg.query || '',
+            settings: msg.settings || null
+          });
+          break;
+
+        case 'settings':
+          if (msg.v && typeof msg.v === 'object' && activeId) {
+            settingsByTheme.set(activeId, { ...(settingsByTheme.get(activeId) || {}), ...msg.v });
+            if (activeSlot?.ready) sendToSlot(activeSlot, msg);
+          }
+          break;
+
+        case 'reset':
+          if (activeId) settingsByTheme.delete(activeId);
+          if (activeSlot?.ready) sendToSlot(activeSlot, msg);
+          break;
+
+        case 'icons':
+          latestIcons = msg;
+          for (const slot of slots.values()) {
+            slot.syncedIcons = false;
+          }
+          if (activeSlot?.ready) {
+            sendToSlot(activeSlot, msg);
+            activeSlot.syncedIcons = true;
+          }
+          break;
+
+        case 'moon':
+          latestMoon = msg;
+          for (const slot of slots.values()) {
+            slot.syncedMoon = false;
+          }
+          if (activeSlot?.ready) {
+            sendToSlot(activeSlot, msg);
+            activeSlot.syncedMoon = true;
+          }
+          break;
+
+        case 'quality':
+          if (typeof msg.v === 'string') currentQuality = msg.v;
+          if (activeSlot?.ready) {
+            sendToSlot(activeSlot, msg);
+            activeSlot.syncedQuality = currentQuality;
+          }
+          break;
+
+        case 'pause':
+          hostPaused = (isPreview && !msg.manual) ? false : !!msg.v;
+          hostPauseManual = !!msg.manual;
+          if (activeSlot?.ready) {
+            sendToSlot(activeSlot, { t: 'pause', v: hostPaused, manual: true });
+          }
+          break;
+
+        case 'mouse':
+        case 'snapshot':
+        case 'record':
+          if (activeSlot?.ready) sendToSlot(activeSlot, msg);
+          break;
+      }
+    }
+
+    function handleChildMessage(ev) {
+      let sourceSlot = null;
+      for (const slot of slots.values()) {
+        if (slot.frame.contentWindow === ev.source) {
+          sourceSlot = slot;
+          break;
+        }
+      }
+      if (!sourceSlot) return;
+
+      let msg = ev.data;
+      if (typeof msg === 'string') {
+        try { msg = JSON.parse(msg); } catch { return; }
+      }
+      if (!msg || typeof msg !== 'object') return;
+
+      if (msg.t === 'ready') {
+        sourceSlot.ready = true;
+        if (warmingId === sourceSlot.id) warmingId = null;
+
+        if (sourceSlot.id === activeId) {
+          revealActiveSlot(sourceSlot);
+          scheduleNextPrewarm(FIRST_PREWARM_DELAY);
+        } else {
+          // Pre-warmed standby finished painting frame #1 -> sync state once and immediately pause to 0% GPU!
+          sourceSlot.frame.classList.remove('is-warming', 'is-active', 'is-under');
+          syncSlotState(sourceSlot, { shouldPause: true, forcePauseManual: true });
+          scheduleNextPrewarm(NEXT_PREWARM_DELAY);
+        }
+        return;
+      }
+
+      if (msg.t === 'sceneError') {
+        if (warmingId === sourceSlot.id) warmingId = null;
+        if (sourceSlot.id === activeId) postUp(msg);
+        scheduleNextPrewarm(500);
+        return;
+      }
+
+      if (msg.t === 'snapshotResult' || msg.t === 'recordResult') {
+        postUp(msg);
+      }
+    }
+
+    // Listen for messages from native host (WebView2 / WebKit) or parent Settings window
+    if (isHost && hasWebView2) {
+      window.chrome.webview.addEventListener('message', (ev) => handleHostMessage(ev.data));
+    }
+    if (isHost && hasWebKit) {
+      window.__screamReceive = (raw) => handleHostMessage(raw);
+    }
+    window.addEventListener('message', (ev) => {
+      if (ev.source === window.parent && window.parent !== window) {
+        handleHostMessage(ev.data);
+      } else {
+        handleChildMessage(ev);
+      }
+    });
+
+    // Bootstrap: announce stage listener immediately and mount initial world synchronously (0ms fetch delay!)
+    postUp({ t: 'stageReady', theme: initialThemeId });
+
+    let initialQuery = '';
+    for (const k of ['view', 'time', 'q']) {
+      const v = qs.get(k);
+      if (v !== null) initialQuery += `&${k}=${encodeURIComponent(v)}`;
+    }
+    switchTheme(initialThemeId, { query: initialQuery });
+
+    // Refresh manifest in background for forward compatibility with future themes
+    fetch('./themes.json', { cache: 'no-cache' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        const readyThemes = (data?.themes || []).filter((t) => t.status === 'ready');
+        if (readyThemes.length > 0) {
+          catalog = readyThemes.map((t) => ({ id: t.id, page: t.page }));
+          scheduleNextPrewarm(FIRST_PREWARM_DELAY);
+        }
+      })
+      .catch(() => { /* Keep FALLBACK_THEMES */ });
+  </script>
+</body>
+</html>

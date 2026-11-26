@@ -29,10 +29,12 @@ namespace Scream.Presentation
         private readonly Timer _mouseTimer;
 
         private Screen _targetScreen;
+        private string _currentThemeId;
         private string _currentPage;
         private string _currentQuery;
         private bool _manualPause;
         private bool _autoPauseEnabled;
+        private bool _stageLoaded;
         private bool _pageReady;
         private bool _shuttingDown;
         private bool _webViewInitialized;
@@ -69,6 +71,7 @@ namespace Scream.Presentation
             ISettingsRepository store,
             CoreWebView2Environment webEnv,
             Screen screen,
+            string initialThemeId,
             string initialPage,
             string initialQuery,
             bool manualPause,
@@ -78,6 +81,7 @@ namespace Scream.Presentation
             _store = store;
             _webEnv = webEnv;
             _targetScreen = screen;
+            _currentThemeId = string.IsNullOrEmpty(initialThemeId) ? "arctic" : initialThemeId;
             _currentPage = initialPage;
             _currentQuery = initialQuery ?? "";
             _manualPause = manualPause;
@@ -218,28 +222,54 @@ namespace Scream.Presentation
                 }
             };
 
-            NavigateToPage(_currentPage, _currentQuery);
+            NavigateToStage(_currentThemeId, _currentPage, _currentQuery);
             _iconTimer.Start();
             _fgTimer.Start();
             _mouseTimer.Start();
         }
 
-        public void NavigateToPage(string page, string extraQuery = "")
+        public void NavigateToStage(string themeId, string page, string extraQuery = "")
         {
+            _currentThemeId = string.IsNullOrEmpty(themeId) ? "arctic" : themeId;
             _currentPage = page;
             _currentQuery = extraQuery ?? "";
+            _stageLoaded = false;
             _pageReady = false;
             _lastIconsJson = "";
             _lastPauseState = -1;
             if (_webView.CoreWebView2 != null)
             {
-                _webView.CoreWebView2.Navigate($"https://app.local/{page}?host=1{_currentQuery}");
+                string encodedTheme = Uri.EscapeDataString(_currentThemeId);
+                _webView.CoreWebView2.Navigate($"https://app.local/stage.html?host=1&theme={encodedTheme}{_currentQuery}");
             }
+        }
+
+        public void SwitchTheme(string themeId, string page, string extraQuery, Dictionary<string, double> settings)
+        {
+            _currentThemeId = string.IsNullOrEmpty(themeId) ? "arctic" : themeId;
+            _currentPage = page;
+            _currentQuery = extraQuery ?? "";
+
+            if (_stageLoaded && _webView.CoreWebView2 != null)
+            {
+                string json = JsonSerializer.Serialize(new
+                {
+                    t = "switchTheme",
+                    id = _currentThemeId,
+                    page = _currentPage,
+                    query = _currentQuery,
+                    settings
+                });
+                PostJson(json);
+                return;
+            }
+
+            NavigateToStage(_currentThemeId, _currentPage, _currentQuery);
         }
 
         public void ReloadPage()
         {
-            NavigateToPage(_currentPage, _currentQuery);
+            NavigateToStage(_currentThemeId, _currentPage, _currentQuery);
         }
 
         public void UpdateScreenBounds(Screen newScreen)
@@ -336,6 +366,7 @@ namespace Scream.Presentation
                 switch (type)
                 {
                     case "ready":
+                        _stageLoaded = true;
                         _pageReady = true;
                         SendThemeSettings(_store.GetEffectiveParams(_store.Current.Theme));
                         SendMoonConfig(_store.Current.MoonMode, _store.Current.MoonDate);
@@ -348,7 +379,7 @@ namespace Scream.Presentation
                         break;
 
                     case "snapshotResult":
-                        HandleShareMedia(root, "png", "scream-beach-snapshot");
+                        HandleShareMedia(root, "png", "scream-snapshot");
                         break;
 
                     case "recordResult":
