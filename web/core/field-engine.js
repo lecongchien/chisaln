@@ -402,16 +402,33 @@ export function sampleSeamlessNoise(tex, px, py, scale, seed, ch = 0) {
 
 /**
  * Render Quality Presets:
- * - 'ultra'    : True native crispness up to 4K / 2x Retina (zero forced downscale, high-res 2D sprite layers).
+ * - 'super'    : 1.5x supersampled sharpness on 1080p/1440p (capped cleanly at 4K) + ultra-crisp 2D sprites.
+ * - 'ultra'    : True 100% native crispness up to 4K / 2x Retina (zero forced downscale, sharp 2D sprite layers).
  * - 'balanced' : Crisp 1080p/2K native sharpness with smooth adaptive governor on iGPUs.
  * - 'eco'      : Power-saving 900p / 30 FPS budget for thin-and-light laptops on battery.
  */
 const QUALITY_PRESETS = {
+  super: {
+    maxDpr: 2.5,
+    maxPixels: 3840 * 2160,
+    previewMaxDpr: 2.25,
+    previewMaxPixels: 2560 * 1440,
+    supersample: 1.5,
+    spriteMaxW: 2880,
+    clipMaxW: 2560,
+    tiers: [
+      { interval: 14, scale: 1.00, uploadMs: 26 },
+      { interval: 29, scale: 1.00, uploadMs: 32 }
+    ]
+  },
   ultra: {
     maxDpr: 2.0,
     maxPixels: 3840 * 2160,
-    previewMaxDpr: 1.6,
-    spriteMaxW: 1920,
+    previewMaxDpr: 2.0,
+    previewMaxPixels: 2560 * 1440,
+    supersample: 1.0,
+    spriteMaxW: 2560,
+    clipMaxW: 1920,
     tiers: [
       { interval: 14, scale: 1.00, uploadMs: 28 },
       { interval: 29, scale: 1.00, uploadMs: 33 }
@@ -420,8 +437,11 @@ const QUALITY_PRESETS = {
   balanced: {
     maxDpr: 1.5,
     maxPixels: 2560 * 1440,
-    previewMaxDpr: 1.25,
+    previewMaxDpr: 1.35,
+    previewMaxPixels: 1920 * 1080,
+    supersample: 1.0,
     spriteMaxW: 1440,
+    clipMaxW: 1600,
     tiers: [
       { interval: 14, scale: 1.00, uploadMs: 31 },
       { interval: 29, scale: 0.92, uploadMs: 36 },
@@ -432,7 +452,10 @@ const QUALITY_PRESETS = {
     maxDpr: 1.15,
     maxPixels: 1600 * 900,
     previewMaxDpr: 1.0,
+    previewMaxPixels: 1280 * 720,
+    supersample: 1.0,
     spriteMaxW: 960,
+    clipMaxW: 1280,
     tiers: [
       { interval: 29, scale: 1.00, uploadMs: 36 },
       { interval: 31, scale: 0.80, uploadMs: 46 }
@@ -440,11 +463,15 @@ const QUALITY_PRESETS = {
   }
 };
 
+export function isValidRenderQuality(mode) {
+  return mode === 'eco' || mode === 'balanced' || mode === 'ultra' || mode === 'super';
+}
+
 function readInitialRenderQuality() {
   try {
     if (typeof window !== 'undefined' && window.location) {
       const q = new URLSearchParams(window.location.search).get('q');
-      if (q === 'eco' || q === 'balanced' || q === 'ultra') return q;
+      if (isValidRenderQuality(q)) return q;
     }
   } catch { /* ignore */ }
   return 'ultra';
@@ -458,7 +485,7 @@ export function getRenderQuality() {
 }
 
 export function setRenderQuality(mode) {
-  const normalized = (mode === 'eco' || mode === 'balanced' || mode === 'ultra') ? mode : 'ultra';
+  const normalized = isValidRenderQuality(mode) ? mode : 'ultra';
   if (normalized === activeRenderQuality) return false;
   activeRenderQuality = normalized;
   for (const fn of qualityListeners) {
@@ -472,32 +499,59 @@ export function setRenderQuality(mode) {
 
 /**
  * Returns the maximum backing width (px) for Canvas2D animated sprite layers
- * scaled cleanly by the active Render Quality preset so foreground art stays sharp.
+ * scaled cleanly by the active Render Quality preset so foreground art stays sharp on 2K/4K.
  */
 export function getSpriteMaxWidth(preferredMax = 1920) {
   const preset = QUALITY_PRESETS[activeRenderQuality] || QUALITY_PRESETS.ultra;
   const dpr = (typeof window !== 'undefined' ? window.devicePixelRatio : 1) || 1;
+  const ceiling = Math.max(preferredMax, preset.spriteMaxW);
   const target = Math.round(preset.spriteMaxW * Math.min(1.25, Math.max(1.0, dpr * 0.75)));
-  return Math.max(800, Math.min(preferredMax, target));
+  return Math.max(800, Math.min(ceiling, target));
+}
+
+/**
+ * Returns the maximum video export width (px) matching the active Render Quality preset.
+ */
+export function getRecordMaxWidth() {
+  const preset = QUALITY_PRESETS[activeRenderQuality] || QUALITY_PRESETS.ultra;
+  return preset.clipMaxW || 1920;
 }
 
 /**
  * Computes an optimal WebGL2 render DPR honoring the active Render Quality preset
- * (native crispness on 1080p/2K/4K/Retina by default, never blurring preview below 1.0x).
+ * (true native sharpness on 1080p/2K/4K/Retina by default, plus optional 1.5x supersampling).
  */
-export function computeRenderDpr(W, H, isPreview = false, qualityScale = 1.0) {
-  const preset = QUALITY_PRESETS[activeRenderQuality] || QUALITY_PRESETS.ultra;
+export function computeRenderDpr(W, H, isPreview = false, qualityScale = 1.0, overrideQuality = null) {
+  const mode = isValidRenderQuality(overrideQuality) ? overrideQuality : activeRenderQuality;
+  const preset = QUALITY_PRESETS[mode] || QUALITY_PRESETS.ultra;
   const q = Math.max(0.72, Math.min(1.0, qualityScale || 1.0));
   const nativeDpr = Math.max(1.0, (typeof window !== 'undefined' ? window.devicePixelRatio : 1) || 1);
+  const desired = nativeDpr * (preset.supersample || 1.0);
+
+  const maxDpr = isPreview ? preset.previewMaxDpr : preset.maxDpr;
+  const maxPixels = isPreview ? preset.previewMaxPixels : preset.maxPixels;
+  const raw = Math.min(maxDpr, desired);
+  const curPixels = Math.max(1, W * H * raw * raw);
+  const ratio = curPixels > maxPixels ? Math.sqrt(maxPixels / curPixels) : 1.0;
 
   if (isPreview) {
-    return Math.max(1.0, Math.min(preset.previewMaxDpr, nativeDpr));
+    return Math.max(1.0, raw * ratio);
   }
-
-  const raw = Math.min(preset.maxDpr, nativeDpr);
-  const curPixels = Math.max(1, W * H * raw * raw);
-  const ratio = curPixels > preset.maxPixels ? Math.sqrt(preset.maxPixels / curPixels) : 1.0;
   return Math.max(0.72, raw * ratio * q);
+}
+
+/**
+ * Estimates the exact output pixel dimensions (width x height) for a given screen & preset.
+ */
+export function estimateRenderResolution(cssW, cssH, mode = activeRenderQuality, isPreview = false) {
+  const w = Math.max(1, cssW || 1920);
+  const h = Math.max(1, cssH || 1080);
+  const dpr = computeRenderDpr(w, h, isPreview, 1.0, mode);
+  return {
+    width: Math.max(1, Math.round(w * dpr)),
+    height: Math.max(1, Math.round(h * dpr)),
+    dpr
+  };
 }
 
 /**

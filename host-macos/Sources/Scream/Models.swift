@@ -34,7 +34,7 @@ struct AppSettings: Codable {
         autoPause = try c.decodeIfPresent(Bool.self, forKey: .autoPause) ?? true
         autoUpdate = try c.decodeIfPresent(Bool.self, forKey: .autoUpdate) ?? true
         let rawQ = try c.decodeIfPresent(String.self, forKey: .renderQuality) ?? "ultra"
-        renderQuality = (rawQ == "eco" || rawQ == "balanced" || rawQ == "ultra") ? rawQ : "ultra"
+        renderQuality = (rawQ == "eco" || rawQ == "balanced" || rawQ == "ultra" || rawQ == "super") ? rawQ : "ultra"
         moonMode = try c.decodeIfPresent(String.self, forKey: .moonMode) ?? "full"
         moonDate = try c.decodeIfPresent(String.self, forKey: .moonDate) ?? "2000-08-15"
         params = try c.decodeIfPresent([String: [String: Double]].self, forKey: .params) ?? [:]

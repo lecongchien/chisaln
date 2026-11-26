@@ -15,12 +15,15 @@ namespace Scream.Presentation
 {
     internal sealed class WallpaperForm : Form
     {
+        private static readonly uint WmTaskbarCreated = Native.RegisterWindowMessage("TaskbarCreated");
+
         private readonly ISettingsRepository _store;
         private readonly CoreWebView2Environment _webEnv;
         private readonly Func<IntPtr> _getSettingsHwnd;
         private readonly WebView2 _webView;
         private readonly DesktopAttacher _attacher = new();
         private readonly IconReader _iconReader = new();
+        private readonly Timer _attachTimer;
         private readonly Timer _iconTimer;
         private readonly Timer _fgTimer;
         private readonly Timer _mouseTimer;
@@ -32,6 +35,8 @@ namespace Scream.Presentation
         private bool _autoPauseEnabled;
         private bool _pageReady;
         private bool _shuttingDown;
+        private bool _webViewInitialized;
+        private int _attachAttempts;
         private string _lastIconsJson = "";
         private int _lastPauseState = -1;
         private Point _lastMousePos = new(-9999, -9999);
@@ -92,6 +97,9 @@ namespace Scream.Presentation
             };
             Controls.Add(_webView);
 
+            _attachTimer = new Timer { Interval = 750 };
+            _attachTimer.Tick += (_, _) => OnAttachTimerTick();
+
             _iconTimer = new Timer { Interval = 650 };
             _iconTimer.Tick += (_, _) => PollIcons();
 
@@ -107,24 +115,83 @@ namespace Scream.Presentation
             base.OnShown(e);
             if (_shuttingDown) return;
 
-            if (!_attacher.Attach(Handle, _targetScreen.Bounds))
+            TryAttachToDesktop(initial: true);
+
+            if (!_webViewInitialized)
             {
-                StatusChanged?.Invoke("Failed to attach to desktop layer");
+                _webViewInitialized = true;
+                try
+                {
+                    await InitializeWebViewAsync();
+                }
+                catch (Exception ex)
+                {
+                    AppLog.Write($"WallpaperForm: WebView2 init failed: {ex.Message}");
+                    StatusChanged?.Invoke("WebView2 error: " + ex.Message);
+                }
             }
-            else
+        }
+
+        private void TryAttachToDesktop(bool initial)
+        {
+            if (_shuttingDown || IsDisposed || !IsHandleCreated) return;
+
+            if (!initial && !Visible) Show();
+
+            if (_attacher.Attach(Handle, _targetScreen.Bounds))
             {
+                _attachAttempts = 0;
+                _attachTimer.Interval = 3000;
+                if (!_attachTimer.Enabled) _attachTimer.Start();
                 StatusChanged?.Invoke(_attacher.ModeDescription);
+                if (!initial && _pageReady)
+                {
+                    _lastIconsJson = "";
+                    PollIcons();
+                }
+                return;
             }
 
-            try
+            _attachAttempts++;
+            // Hide while waiting for Explorer/Progman during Windows startup so the window never covers sign-in
+            if (Visible) Hide();
+            _attachTimer.Interval = _attachAttempts < 24 ? 750 : 2500;
+            if (!_attachTimer.Enabled) _attachTimer.Start();
+            if (initial || _attachAttempts == 1)
             {
-                await InitializeWebViewAsync();
+                AppLog.Write("WallpaperForm: Waiting for Windows desktop shell (Progman) to become ready...");
+                StatusChanged?.Invoke("Waiting for desktop shell...");
             }
-            catch (Exception ex)
+        }
+
+        private void OnAttachTimerTick()
+        {
+            if (_shuttingDown || IsDisposed) return;
+
+            if (_attacher.IsAttached)
             {
-                AppLog.Write($"WallpaperForm: WebView2 init failed: {ex.Message}");
-                StatusChanged?.Invoke("WebView2 error: " + ex.Message);
+                _attacher.EnsureZOrder();
+                return;
             }
+
+            // Desktop shell wasn't ready at startup or explorer.exe restarted — retry cleanly once Progman is up
+            if (!DesktopAttacher.IsDesktopShellReady()) return;
+
+            AppLog.Write("WallpaperForm: Desktop shell detected — attaching wallpaper surface.");
+            TryAttachToDesktop(initial: false);
+        }
+
+        protected override void WndProc(ref Message m)
+        {
+            if (WmTaskbarCreated != 0 && m.Msg == WmTaskbarCreated && !_shuttingDown && !IsDisposed)
+            {
+                AppLog.Write("WallpaperForm: TaskbarCreated received — scheduling desktop re-attach.");
+                _attacher.Detach();
+                _attachAttempts = 0;
+                _attachTimer.Interval = 500;
+                if (!_attachTimer.Enabled) _attachTimer.Start();
+            }
+            base.WndProc(ref m);
         }
 
         private async Task InitializeWebViewAsync()
@@ -229,7 +296,7 @@ namespace Scream.Presentation
 
         public void SendRenderQuality(string quality)
         {
-            string q = quality is "eco" or "balanced" or "ultra" ? quality : "ultra";
+            string q = quality is "eco" or "balanced" or "ultra" or "super" ? quality : "ultra";
             string json = JsonSerializer.Serialize(new { t = "quality", v = q });
             PostJson(json);
         }
@@ -433,6 +500,7 @@ namespace Scream.Presentation
             if (_shuttingDown) return;
             _shuttingDown = true;
 
+            _attachTimer.Stop();
             _iconTimer.Stop();
             _fgTimer.Stop();
             _mouseTimer.Stop();
@@ -452,6 +520,7 @@ namespace Scream.Presentation
         {
             if (disposing)
             {
+                _attachTimer.Dispose();
                 _iconTimer.Dispose();
                 _fgTimer.Dispose();
                 _mouseTimer.Dispose();

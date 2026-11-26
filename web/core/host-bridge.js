@@ -1,4 +1,4 @@
-import { setRenderQuality } from './field-engine.js';
+import { getRecordMaxWidth, setRenderQuality } from './field-engine.js';
 
 /**
  * Unified Bridge between Theme Page and:
@@ -272,7 +272,7 @@ export function createHostBridge(callbacks) {
         return;
       }
       const out = document.createElement('canvas');
-      const maxW = 1280;
+      const maxW = getRecordMaxWidth();
       const ratio = Math.min(1, maxW / Math.max(1, canvases.glCanvas.width));
       out.width = Math.max(320, Math.round(canvases.glCanvas.width * ratio));
       out.height = Math.max(180, Math.round(canvases.glCanvas.height * ratio));

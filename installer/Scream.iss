@@ -53,7 +53,9 @@ Name: "{group}\Uninstall {#MyAppShortName}"; Filename: "{uninstallexe}"
 Name: "{userdesktop}\{#MyAppShortName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppExeName}"
 
 [Registry]
-; Clean up Windows Auto-Start key automatically on uninstall (if user enabled it inside Scream Settings)
+; Enable Windows Auto-Start automatically on fresh install (and preserve user's opt-out on silent updates)
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "ScreamWallpaper"; ValueData: """{app}\{#MyAppExeName}"" --autostart"; Flags: uninsdeletevalue; Check: ShouldRegisterAutoStart
+; Always remove Auto-Start entry cleanly on uninstall even if toggled inside Scream Settings later
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: none; ValueName: "ScreamWallpaper"; Flags: uninsdeletevalue
 
 [Run]
@@ -66,6 +68,16 @@ Filename: "{app}\{#MyAppExeName}"; Parameters: "{code:GetRelaunchParams}"; Flags
 const
   WebView2RegKey = 'SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}';
   WebView2Url    = 'https://go.microsoft.com/fwlink/p/?LinkId=2124703';
+  AutoStartKey   = 'Software\Microsoft\Windows\CurrentVersion\Run';
+  AutoStartValue = 'ScreamWallpaper';
+
+var
+  IsFreshInstall: Boolean;
+
+function ShouldRegisterAutoStart(): Boolean;
+begin
+  Result := IsFreshInstall or RegValueExists(HKEY_CURRENT_USER, AutoStartKey, AutoStartValue);
+end;
 
 function GetRelaunchParams(Param: String): String;
 begin
@@ -105,6 +117,7 @@ end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
+  IsFreshInstall := not FileExists(ExpandConstant('{app}\{#MyAppExeName}'));
   StopRunningScream();
   Result := '';
 end;

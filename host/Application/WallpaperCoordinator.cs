@@ -112,7 +112,7 @@ namespace Scream.Application
             {
                 sb.Append("&time=").Append((int)Math.Round(tm));
             }
-            string q = _store.Current.RenderQuality is "eco" or "balanced" or "ultra"
+            string q = _store.Current.RenderQuality is "eco" or "balanced" or "ultra" or "super"
                 ? _store.Current.RenderQuality
                 : "ultra";
             sb.Append("&q=").Append(q);
@@ -341,7 +341,7 @@ namespace Scream.Application
 
                     case "quality":
                         string qMode = root.TryGetProperty("v", out var qEl) ? qEl.GetString() ?? "ultra" : "ultra";
-                        if (qMode != "eco" && qMode != "balanced" && qMode != "ultra") qMode = "ultra";
+                        if (qMode != "eco" && qMode != "balanced" && qMode != "ultra" && qMode != "super") qMode = "ultra";
                         _store.Current.RenderQuality = qMode;
                         ScheduleSave();
                         foreach (var wf in _wallpapers) wf.SendRenderQuality(qMode);
@@ -380,7 +380,7 @@ namespace Scream.Application
                 lang = _store.Current.Lang,
                 moonMode = _store.Current.MoonMode,
                 moonDate = _store.Current.MoonDate,
-                renderQuality = _store.Current.RenderQuality is "eco" or "balanced" or "ultra" ? _store.Current.RenderQuality : "ultra",
+                renderQuality = _store.Current.RenderQuality is "eco" or "balanced" or "ultra" or "super" ? _store.Current.RenderQuality : "ultra",
                 paramsByTheme = allParams,
                 autostart = _store.IsAutoStartEnabled(),
                 autopause = _store.Current.AutoPause,

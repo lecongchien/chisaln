@@ -286,7 +286,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         case "quality":
             var q = root["v"] as? String ?? "ultra"
-            if q != "eco" && q != "balanced" && q != "ultra" { q = "ultra" }
+            if q != "eco" && q != "balanced" && q != "ultra" && q != "super" { q = "ultra" }
             store.current.renderQuality = q
             scheduleSave()
             for w in wallpapers { w.sendRenderQuality(q) }

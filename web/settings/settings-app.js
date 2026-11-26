@@ -5,6 +5,7 @@
  * and robust bidirectional WebView2 communication with WallpaperCoordinator.
  */
 import { COPY, THEME_THUMBS, THEME_SUBTITLES } from './settings-copy.js';
+import { estimateRenderResolution, isValidRenderQuality } from '../core/field-engine.js';
 import { resolveMoonConfig, parseIsoDate, formatIsoDate, drawMiniMoonCanvas } from '../core/moon-phase.js';
 
 const hasWebView2 = !!(window.chrome && window.chrome.webview);
@@ -493,7 +494,11 @@ function applyStaticCopy() {
   if (lblQ) lblQ.textContent = t('qualityLabel');
   if (hintQ) hintQ.textContent = t('qualityHint');
   if (el.valQuality) {
-    el.valQuality.textContent = t('qualityOpts')[state.renderQuality] || state.renderQuality;
+    const qLabel = t('qualityOpts')[state.renderQuality] || state.renderQuality;
+    const screenW = (typeof window !== 'undefined' && window.screen?.width) || 1920;
+    const screenH = (typeof window !== 'undefined' && window.screen?.height) || 1080;
+    const est = estimateRenderResolution(screenW, screenH, state.renderQuality, false);
+    el.valQuality.textContent = `${qLabel} · ${est.width}×${est.height}`;
   }
   if (el.qualitySeg) {
     el.qualitySeg.querySelectorAll('button[data-quality]').forEach((btn) => {
@@ -1172,7 +1177,7 @@ function bindEvents() {
     el.qualitySeg.querySelectorAll('button[data-quality]').forEach((btn) => {
       btn.addEventListener('click', () => {
         const nextQ = btn.dataset.quality;
-        if (nextQ !== 'eco' && nextQ !== 'balanced' && nextQ !== 'ultra') return;
+        if (!isValidRenderQuality(nextQ)) return;
         if (state.renderQuality === nextQ) return;
         state.renderQuality = nextQ;
         sendToHost({ t: 'quality', v: nextQ });
@@ -1285,7 +1290,7 @@ function bindEvents() {
           if (msg.lang) state.lang = msg.lang;
           if (msg.moonMode) state.moonMode = msg.moonMode;
           if (msg.moonDate) state.moonDate = msg.moonDate;
-          if (msg.renderQuality === 'eco' || msg.renderQuality === 'balanced' || msg.renderQuality === 'ultra') {
+          if (isValidRenderQuality(msg.renderQuality)) {
             state.renderQuality = msg.renderQuality;
           }
           if (msg.paramsByTheme) state.paramsByTheme = msg.paramsByTheme;

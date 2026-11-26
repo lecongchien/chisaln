@@ -166,7 +166,7 @@ final class WallpaperWindowController: NSObject, WKNavigationDelegate {
     }
 
     func sendRenderQuality(_ quality: String) {
-        let q = (quality == "eco" || quality == "balanced" || quality == "ultra") ? quality : "ultra"
+        let q = (quality == "eco" || quality == "balanced" || quality == "ultra" || quality == "super") ? quality : "ultra"
         let payload: [String: Any] = ["t": "quality", "v": q]
         if let json = serializeDict(payload) { postJson(json) }
     }

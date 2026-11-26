@@ -169,14 +169,15 @@
                   </div>
                   <div class="param-row">
                     <div class="param-top">
-                      <span class="param-label" id="lbl-quality">Độ nét hiển thị</span>
-                      <span class="param-val" id="val-quality">Sắc nét</span>
+                      <span class="param-label" id="lbl-quality">Độ nét & Độ phân giải</span>
+                      <span class="param-val" id="val-quality">Gốc</span>
                     </div>
-                    <div class="param-hint" id="hint-quality">Render đúng độ phân giải thật của màn hình (1080p / 2K / Retina) hoặc hạ nhẹ cho máy chạy pin</div>
-                    <div class="seg-control" id="quality-seg" role="radiogroup" aria-labelledby="lbl-quality" style="--cols: 3">
+                    <div class="param-hint" id="hint-quality">Mặc định hiển thị đúng độ phân giải gốc của màn hình; chọn Siêu nét 1.5× nếu dùng card rời hoặc Tiết kiệm khi chạy pin</div>
+                    <div class="seg-control" id="quality-seg" role="radiogroup" aria-labelledby="lbl-quality" style="--cols: 4">
                       <button type="button" data-quality="eco" aria-pressed="false">Tiết kiệm</button>
                       <button type="button" data-quality="balanced" aria-pressed="false">Cân bằng</button>
-                      <button type="button" data-quality="ultra" aria-pressed="true" class="active">Sắc nét</button>
+                      <button type="button" data-quality="ultra" aria-pressed="true" class="active">Gốc</button>
+                      <button type="button" data-quality="super" aria-pressed="false">Siêu nét</button>
                     </div>
                   </div>
                 </div>

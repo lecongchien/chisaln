@@ -21,7 +21,21 @@ namespace Scream.Infrastructure
         private Rectangle _targetBounds;
 
         public string ModeDescription { get; private set; } = "unattached";
-        public bool IsAttached => _parentHwnd != IntPtr.Zero && Native.IsWindow(_parentHwnd);
+        public bool IsAttached =>
+            _parentHwnd != IntPtr.Zero &&
+            Native.IsWindow(_parentHwnd) &&
+            (!_isRaisedProgman || (_zAnchor != IntPtr.Zero && Native.IsWindow(_zAnchor))) &&
+            _childHwnd != IntPtr.Zero &&
+            Native.IsWindow(_childHwnd) &&
+            Native.GetParent(_childHwnd) == _parentHwnd;
+
+        public static bool IsDesktopShellReady()
+        {
+            IntPtr progman = Native.FindWindow("Progman", null);
+            if (progman == IntPtr.Zero) return false;
+            return FindClassicWorker(progman) != IntPtr.Zero ||
+                   Native.FindWindowEx(progman, IntPtr.Zero, "SHELLDLL_DefView", null) != IntPtr.Zero;
+        }
 
         public static IntPtr FindClassicWorker(IntPtr progman)
         {
