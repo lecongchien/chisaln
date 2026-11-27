@@ -620,29 +620,21 @@ void applySeaMoonReflection(
   // Confine water reflection strictly to open sea away from vertical ice cliffs
   float waterVis = smoothstep(0.0, 10.0, shoreD);
 
-  // 1. Soft atmospheric aureole, water-scattered corona & subtle 22-deg Arctic ice-crystal halo
-  float aureole = exp(-max(dO, 0.0) / (mRad * 1.40)) * 0.50 * phaseGlow;
-  float corona  = exp(-max(dO, 0.0) / (mRad * 4.60)) * 0.26 * phaseGlow;
-  float iceHalo = exp(-pow((dMoon - mRad * 2.75) / (mRad * 0.78), 2.0)) * 0.12 * phaseGlow;
-  seaCol += vec3(0.95, 0.96, 0.89) * aureole * 0.54 * night * waterVis;
-  seaCol += vec3(0.46, 0.78, 0.96) * corona  * 0.84 * night * waterVis;
-  seaCol += vec3(0.74, 0.90, 1.00) * iceHalo * night * waterVis;
-
-  // 2. Shimmering moonlight glitter corridor strictly along the incident-light plane (-LIGHT = (+0.60, +0.80))
+  // 1. Subtle shimmering moonlight wave-crest glints along the incident-light plane (-LIGHT)
   vec2 incDir  = -LIGHT; // Points from upper-left Moon down-right along incident plane
   vec2 incPerp = vec2(-incDir.y, incDir.x);
   vec2 trackRel = pCss - uMoonPos.xy;
   float trackAlong = dot(trackRel, incDir);
   float trackCross = abs(dot(trackRel, incPerp) + waveSlopeX * 1.25);
-  float trackSpread = mRad * (0.72 + smoothstep(0.0, 240.0, max(0.0, trackAlong)) * 1.35);
+  float trackSpread = mRad * (0.68 + smoothstep(0.0, 220.0, max(0.0, trackAlong)) * 1.15);
   float trackEnv = exp(-pow(trackCross / max(1.0, trackSpread), 2.0))
-                 * smoothstep(-mRad * 0.75, mRad * 0.65, trackAlong)
-                 * exp(-max(0.0, trackAlong) / 235.0);
-  // Wave-crest Fresnel glints dancing along the incident corridor
-  float crestSpark = pow(0.5 + 0.5 * sin(dot(pCss, incDir) * 0.34 - t * 2.45 + fDisp.x * 6.5 + swell * 2.2), 3.5);
-  seaCol += vec3(0.84, 0.94, 0.99) * trackEnv * (0.10 + 0.34 * crestSpark) * phaseGlow * night * waterVis;
+                 * smoothstep(-mRad * 0.65, mRad * 0.65, trackAlong)
+                 * exp(-max(0.0, trackAlong) / 215.0);
+  // Crisp discrete wave-crest sparkles (zero foggy halo!)
+  float crestSpark = pow(0.5 + 0.5 * sin(dot(pCss, incDir) * 0.34 - t * 2.45 + fDisp.x * 6.5 + swell * 2.2), 4.0);
+  seaCol += vec3(0.84, 0.94, 0.99) * trackEnv * (0.28 * crestSpark) * phaseGlow * night * waterVis;
 
-  // 3. Vertically-Mirrored 3D Spherical Lunar Disc softened & sliced naturally by water ripples
+  // 2. Vertically-Mirrored 3D Spherical Lunar Disc softened & sliced naturally by water ripples
   float disc = smoothstep(3.6, -2.4, dO);
   if (disc > 0.002) {
     // Mirror reflection across water plane (invert Y relative to direct sky view!)
