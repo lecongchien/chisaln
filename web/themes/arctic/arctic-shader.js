@@ -23,7 +23,6 @@ uniform sampler2D uFB;
 uniform sampler2D uNoise;
 uniform sampler2D uActorsTex;
 uniform sampler2D uActorsShadowTex;
-uniform sampler2D uMoonTex;
 uniform sampler2D uWaterTex;
 uniform sampler2D uSnowTex;
 uniform sampler2D uFloesTex;
@@ -41,10 +40,7 @@ uniform float uEdge;         // shoreline ice-edge roughness
 uniform float uSeed;
 uniform float uSunset;       // 0..1 Polar Alpenglow sunset
 uniform float uNight;        // 0..1 Polar Aurora Night
-uniform float uMoonPhase;    // 0=New, 0.25=First Qtr, 0.5=Full, 0.75=Last Qtr
 
-uniform vec4 uHole;          // xy = ice hole center CSS px, zw = radii (rx, ry); z <= 0 hides hole
-uniform vec2 uHoleRipple;    // x = age since splash (sec), y = splash strength (0..1)
 uniform vec4 uActorsRect;    // xy = top-left CSS px, zw = size CSS px (z <= 0 disables)
 
 uniform vec4 uWindA[4];
@@ -68,8 +64,6 @@ const vec3 D_ICE_SH      = vec3(0.505, 0.658, 0.802);
 const vec3 D_SEA_DEEP    = vec3(0.018, 0.195, 0.305);
 const vec3 D_SEA_VIRID   = vec3(0.095, 0.545, 0.535);
 const vec3 D_SEA_AQUA    = vec3(0.325, 0.768, 0.725);
-const vec3 D_HOLE_WATER  = vec3(0.155, 0.718, 0.682);
-const vec3 D_HOLE_DEEP   = vec3(0.048, 0.415, 0.495);
 const vec3 D_INK         = vec3(0.105, 0.238, 0.335);
 
 // Polar Alpenglow Sunset watercolor grading tones
@@ -81,8 +75,6 @@ const vec3 S_ICE_SH      = vec3(0.345, 0.398, 0.562);
 const vec3 S_SEA_DEEP    = vec3(0.045, 0.088, 0.202);
 const vec3 S_SEA_VIRID   = vec3(0.265, 0.315, 0.468);
 const vec3 S_SEA_AQUA    = vec3(0.525, 0.455, 0.598);
-const vec3 S_HOLE_WATER  = vec3(0.315, 0.382, 0.528);
-const vec3 S_HOLE_DEEP   = vec3(0.118, 0.162, 0.298);
 const vec3 S_INK         = vec3(0.152, 0.145, 0.272);
 
 // Arctic Night watercolor grading tones
@@ -94,8 +86,6 @@ const vec3 N_ICE_SH      = vec3(0.125, 0.268, 0.392);
 const vec3 N_SEA_DEEP    = vec3(0.015, 0.046, 0.102);
 const vec3 N_SEA_VIRID   = vec3(0.065, 0.228, 0.305);
 const vec3 N_SEA_AQUA    = vec3(0.145, 0.465, 0.545);
-const vec3 N_HOLE_WATER  = vec3(0.068, 0.218, 0.298);
-const vec3 N_HOLE_DEEP   = vec3(0.022, 0.075, 0.145);
 const vec3 N_INK         = vec3(0.042, 0.095, 0.165);
 
 float hash2(vec2 p) {
@@ -234,34 +224,12 @@ vec3 evalBrittleIceCracks(vec2 pCss, float sSurf, float wallThickness, float gra
   // Keep the sleeping Polar Bear's resting snow bed completely smooth
   float bearCalm = 1.0;
   if (uActorsRect.z > 1.0) {
-    vec2 bearCenter = uActorsRect.xy + vec2(0.37, 0.56) * uActorsRect.zw;
-    float dBear = length((pCss - bearCenter) / max(1.0, uActorsRect.z * 0.25));
+    vec2 bearCenter = uActorsRect.xy + vec2(0.50, 0.54) * uActorsRect.zw;
+    float dBear = length((pCss - bearCenter) / max(1.0, uActorsRect.z * 0.28));
     bearCalm = smoothstep(0.68, 1.32, dBear);
   }
 
-  // 1. Two tiny, understated hand-inked brittle hairline ticks tucked into corners of the carved ice hole
-  if (uHole.z > 1.0 && sSurf > 0.0) {
-    vec2 hRel = pCss - uHole.xy;
-    float maxR = max(uHole.z, uHole.w);
-    if (dot(hRel, hRel) < (maxR * 1.65) * (maxR * 1.65)) {
-      // Micro wobble for authentic dip-pen paper feel
-      vec2 pw = pCss + (texN(pCss, 0.065).rg - 0.5) * 1.1;
-      for (int k = 0; k < 2; k++) {
-        float fk = float(k);
-        float a0 = mix(-2.25, 0.58, fk);
-        vec2 dir = vec2(cos(a0), sin(a0));
-        vec2 pStart = uHole.xy + dir * (uHole.zw * 0.96);
-        float len1 = maxR * mix(0.24, 0.20, fk);
-        float len2 = maxR * mix(0.20, 0.16, fk);
-        vec2 pMid = pStart + vec2(cos(a0 + 0.16), sin(a0 + 0.16)) * len1;
-        vec2 pEnd = pMid   + vec2(cos(a0 - 0.24), sin(a0 - 0.24)) * len2;
-        accumCrackSeg(pw, pStart, pMid, 0.0, 0.55, 0.92, 0.28, 0.58, 0.24, grain, bestInk, bestWash);
-        accumCrackSeg(pw, pMid,   pEnd, 0.55, 1.0, 0.92, 0.28, 0.58, 0.24, grain, bestInk, bestWash);
-      }
-    }
-  }
-
-  // 2. Sparse brittle polyline shoreline calving cracks (ONLY evaluated within shoreline band!)
+  // Sparse brittle polyline shoreline calving cracks (ONLY evaluated within shoreline band!)
   if (sSurf > -wallThickness - 4.0 && sSurf < 155.0 && bearCalm > 0.02) {
     // Subtle hand-drawn dip-pen micro-wobble on textured watercolor paper (never clinical CAD lines!)
     vec2 pw = pCss + (texN(pCss, 0.058).rg - 0.5) * 1.25;
@@ -615,32 +583,6 @@ float evalSnowfall(vec2 pCss, float windT, float density) {
   return clamp(snow, 0.0, 0.85);
 }
 
-// Crisp reflected lunar disc inside the dark aquamarine ice hole at night
-vec3 evalHoleMoon(vec2 localUv, float night, float phase) {
-  if (night < 0.04) return vec3(0.0);
-  vec2 mPos = vec2(-0.16, -0.14);
-  float mRad = 0.30;
-  vec2 d = (localUv - mPos) / mRad;
-  float r2 = dot(d, d);
-  if (r2 > 1.8) return vec3(0.0);
-
-  float disc = 1.0 - smoothstep(0.92, 1.04, sqrt(r2));
-  float halo = exp(-r2 * 1.45) * 0.22;
-
-  float ang = (phase - 0.5) * TAU;
-  vec3 sunDir = normalize(vec3(sin(ang), 0.14, cos(ang)));
-  float nz = sqrt(max(0.0, 1.0 - min(r2, 1.0)));
-  vec3 nrm = normalize(vec3(d.x, -d.y, nz));
-  float lit = smoothstep(-0.08, 0.22, dot(nrm, sunDir));
-
-  vec2 texUv = d * 0.5 + 0.5;
-  float crater = texture(uMoonTex, clamp(texUv, 0.02, 0.98)).r;
-  vec3 moonCol = mix(vec3(0.84, 0.91, 0.98), vec3(1.0, 0.985, 0.93), 0.55) * (0.76 + 0.30 * crater);
-  vec3 glowCol = vec3(0.55, 0.76, 0.96);
-
-  return (moonCol * disc * (0.08 + 0.92 * lit) + glowCol * halo * (0.35 + 0.65 * lit)) * night;
-}
-
 void main() {
   vec2 pCss = vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y) / max(0.5, uDpr);
 
@@ -653,8 +595,6 @@ void main() {
   vec3 seaDeep   = mix(mix(D_SEA_DEEP,   S_SEA_DEEP,   uSunset), N_SEA_DEEP,   uNight);
   vec3 seaVirid  = mix(mix(D_SEA_VIRID,  S_SEA_VIRID,  uSunset), N_SEA_VIRID,  uNight);
   vec3 seaAqua   = mix(mix(D_SEA_AQUA,   S_SEA_AQUA,   uSunset), N_SEA_AQUA,   uNight);
-  vec3 holeWater = mix(mix(D_HOLE_WATER, S_HOLE_WATER, uSunset), N_HOLE_WATER, uNight);
-  vec3 holeDeep  = mix(mix(D_HOLE_DEEP,  S_HOLE_DEEP,  uSunset), N_HOLE_DEEP,  uNight);
   vec3 inkCol    = mix(mix(D_INK,        S_INK,        uSunset), N_INK,        uNight);
 
   // Organic multi-scale noise for jagged fractured ice shoreline & fine cold-press paper unity
@@ -838,65 +778,7 @@ void main() {
   col = mix(col, snowCol, snowMask);
   col = mix(col, inkCol, clamp(topInkLine * 0.52 + baseInkLine * 0.58, 0.0, 0.76));
 
-  // ---- 4. Hand-Painted Faceted Aquamarine Ice Hole (Penguin's Playground!) ----
-  if (uHole.z > 1.0 && sSurf > -4.0) {
-    vec2 hRel = pCss - uHole.xy;
-    vec2 hNorm = hRel / max(vec2(1.0), uHole.zw);
-    float hAng = atan(hNorm.y, hNorm.x);
-    float facet = 0.068 * cos(hAng * 5.0 + 0.6) + 0.042 * sin(hAng * 3.0 - 1.1)
-                + 0.024 * cos(hAng * 7.0 + uSeed) + (nBrush.r - 0.5) * 0.032;
-    float hDist = length(hNorm) + facet;
-
-    // Soft matte periwinkle watercolor collar shadow around the carved ice rim
-    float outerLip = smoothstep(1.36, 1.05, hDist) * smoothstep(0.96, 1.04, hDist);
-    float lipLight = dot(normalize(hNorm + vec2(1e-4)), LIGHT);
-    vec3 lipCol = mix(snowSh * 0.95, snowHi, 0.5 + 0.5 * lipLight);
-    col = mix(col, lipCol, outerLip * 0.60 * snowMask);
-
-    if (hDist < 1.08) {
-      float holeMask = 1.0 - smoothstep(0.98, 1.04, hDist);
-      vec2 innerNorm = (hRel - LIGHT * 6.5) / max(vec2(1.0), uHole.zw * 0.87);
-      float innerDist = length(innerNorm) + facet;
-      float waterMask = 1.0 - smoothstep(0.90, 0.99, innerDist);
-
-      // Real hand-painted watercolor water inside the ice hole, brightened to jewel aquamarine!
-      vec3 hFluid = evalOrganicFluid(hRel * 1.65, uTime * 1.05);
-      vec2 hUv = (hRel + hFluid.xy * 9.0 + vec2(uTime * 5.0, -uTime * 3.5)) / 320.0;
-      vec3 hPainted = texture(uWaterTex, hUv).rgb;
-      float hTone = clamp(hPainted.g * 1.45, 0.0, 1.0);
-      vec3 hw = mix(holeDeep, holeWater, smoothstep(0.05, 0.85, innerDist) * 0.58 + hTone * 0.45);
-      hw = mix(hw, mix(holeWater, snowHi, 0.34), smoothstep(0.72, 0.98, innerDist) * 0.44);
-      hw += auroraCol * 0.56;
-      hw += evalHoleMoon(innerNorm + hFluid.xy * 0.03, uNight, uMoonPhase);
-
-      // Gentle matte watercolor idle ripples + penguin splash rings
-      float idleWave = sin(innerDist * 16.0 - uTime * 2.1 + hFluid.z * 1.4) * 0.5 + 0.5;
-      float rippleRing = idleWave * 0.048 * (1.0 - innerDist * 0.45);
-      if (uHoleRipple.y > 0.01 && uHoleRipple.x >= 0.0 && uHoleRipple.x < 2.2) {
-        float rAge = uHoleRipple.x;
-        float rEnv = exp(-rAge * 1.95) * uHoleRipple.y;
-        float rad1 = rAge * 0.96;
-        float rad2 = max(0.0, (rAge - 0.18) * 0.92);
-        float ring1 = exp(-pow((innerDist - rad1) * 14.0, 2.0));
-        float ring2 = exp(-pow((innerDist - rad2) * 16.0, 2.0)) * 0.65;
-        rippleRing += (ring1 + ring2) * rEnv * 0.72;
-      }
-      hw = mix(hw, mix(vec3(0.86, 0.97, 0.96), vec3(0.98, 0.86, 0.88), uSunset), clamp(rippleRing, 0.0, 0.78));
-      hw *= 1.0 + paperTooth * 0.045;
-
-      // Stepped matte faceted beveled ice wall inside the hole
-      float bevelFacet = 1.0 - smoothstep(0.0, 0.11, abs(sin(hAng * 2.5 + 0.3)));
-      vec3 bevelCol = mix(iceWall * 1.04, iceSh * 1.02, 0.5 + 0.5 * lipLight) * (1.0 + paperTooth * 0.04);
-      bevelCol = mix(bevelCol, inkCol, bevelFacet * 0.28);
-      vec3 holeInterior = mix(bevelCol, hw, waterMask);
-
-      float rimInk = (1.0 - smoothstep(0.0, 0.048, abs(hDist - 0.99))) * (0.65 + 0.35 * nBrush.g);
-      col = mix(col, holeInterior, holeMask * snowMask);
-      col = mix(col, inkCol, rimInk * 0.58 * snowMask);
-    }
-  }
-
-  // ---- 5. Hand-Painted Studio Ghibli Sleeping Polar Bear & Red-Scarf Penguin ----
+  // ---- 4. Hand-Painted Studio Ghibli Sleeping Polar Bear ----
   if (uActorsRect.z > 1.0) {
     vec2 aUv = (pCss - uActorsRect.xy) / uActorsRect.zw;
     if (aUv.x >= 0.0 && aUv.x <= 1.0 && aUv.y >= 0.0 && aUv.y <= 1.0) {

@@ -10,8 +10,8 @@
         "en": "Arctic Polar Bear"
       },
       "desc": {
-        "vi": "Biển băng xanh sâu ôm lấy icon, thềm tuyết màu nước có chú gấu Bắc Cực nằm cuộn tròn ngủ êm bên hố băng ngọc bích.",
-        "en": "Deep glacial sea cradling your icons around a snowy watercolor ice shelf where a polar bear sleeps peacefully beside an aquamarine ice pool."
+        "vi": "Biển băng xanh sâu ôm lấy icon, thềm tuyết màu nước có chú gấu Bắc Cực nằm cuộn tròn ngủ êm.",
+        "en": "Deep glacial sea cradling your icons around a snowy watercolor ice shelf where a polar bear sleeps peacefully."
       },
       "accent": "#1B6B93",
       "groups": [
@@ -86,7 +86,7 @@
             {
               "key": "aurora",
               "label": { "vi": "Cực quang (Ban đêm)", "en": "Aurora Borealis (Night)" },
-              "hint": { "vi": "Cường độ dải cực quang xanh lục – tím phản chiếu trên biển băng và lỗ nước", "en": "Intensity of shimmering emerald-violet northern lights at night" },
+              "hint": { "vi": "Cường độ dải cực quang xanh lục – tím phản chiếu trên mặt biển băng", "en": "Intensity of shimmering emerald-violet northern lights reflected on the glacial sea" },
               "min": 0,
               "max": 1,
               "step": 0.05,
@@ -100,8 +100,8 @@
           "params": [
             {
               "key": "showFriends",
-              "label": { "vi": "Gấu trắng & Hố băng", "en": "Polar Bear & Ice Pool" },
-              "hint": { "vi": "Hiện chú gấu Bắc Cực nằm ngủ êm bên hố băng phản chiếu trăng và cực quang", "en": "Show the sleeping polar bear beside the moon-reflecting aquamarine ice pool" },
+              "label": { "vi": "Gấu trắng ngủ đông", "en": "Sleeping Polar Bear" },
+              "hint": { "vi": "Hiện chú gấu Bắc Cực nằm cuộn tròn ngủ êm trên thềm tuyết", "en": "Show the sleeping polar bear curled up peacefully on the snow shelf" },
               "options": {
                 "vi": ["Ẩn", "Hiện"],
                 "en": ["Hide", "Show"]

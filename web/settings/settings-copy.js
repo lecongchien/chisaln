@@ -194,7 +194,7 @@ export const COPY = {
 };
 
 export const THEME_THUMBS = {
-  arctic: './assets/thumb-arctic.jpg',
+  arctic: './assets/thumb-arctic.jpg?v=bear2',
   skyship: './assets/thumb-skyship.jpg',
   seatrain: './assets/thumb-seatrain.jpg'
 };

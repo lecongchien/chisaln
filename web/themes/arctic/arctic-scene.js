@@ -17,9 +17,8 @@ import {
   createPerfGovernor
 } from '../../core/field-engine.js';
 import { createHostBridge } from '../../core/host-bridge.js';
-import { resolveMoonConfig, createMoonSurfaceLoader } from '../../core/moon-phase.js';
 import { ARCTIC_FS } from './arctic-shader.js';
-import { createArcticActorsController, BEAR_NORM, HOLE_NORM } from './arctic-actors.js';
+import { createArcticActorsController, BEAR_NORM } from './arctic-actors.js';
 import { createWindRibbonSystem } from './arctic-wind.js';
 
 const DEFAULTS = {
@@ -74,7 +73,6 @@ function bindArcticUniforms(program) {
     uNoise: gl.getUniformLocation(program, 'uNoise'),
     uActorsTex: gl.getUniformLocation(program, 'uActorsTex'),
     uActorsShadowTex: gl.getUniformLocation(program, 'uActorsShadowTex'),
-    uMoonTex: gl.getUniformLocation(program, 'uMoonTex'),
     uWaterTex: gl.getUniformLocation(program, 'uWaterTex'),
     uSnowTex: gl.getUniformLocation(program, 'uSnowTex'),
     uFloesTex: gl.getUniformLocation(program, 'uFloesTex'),
@@ -91,9 +89,6 @@ function bindArcticUniforms(program) {
     uSeed: gl.getUniformLocation(program, 'uSeed'),
     uSunset: gl.getUniformLocation(program, 'uSunset'),
     uNight: gl.getUniformLocation(program, 'uNight'),
-    uMoonPhase: gl.getUniformLocation(program, 'uMoonPhase'),
-    uHole: gl.getUniformLocation(program, 'uHole'),
-    uHoleRipple: gl.getUniformLocation(program, 'uHoleRipple'),
     uActorsRect: gl.getUniformLocation(program, 'uActorsRect'),
     uWindA: gl.getUniformLocation(program, 'uWindA'),
     uWindB: gl.getUniformLocation(program, 'uWindB'),
@@ -160,16 +155,11 @@ const SCENE_SEED = 41.7;
 
 let simTime = 0, flowTime = 0, lastRaf = 0, lastDraw = 0;
 let sunsetMix = 0, nightMix = 0, moodInitialized = false;
-let moonCfg = { mode: 'full', date: '2000-08-15' };
-let moonPhase = 0.5;
 
 const actors = createArcticActorsController(gl, () => {
   if (paused) renderFrame(simTime, true);
 });
 const windRibbons = createWindRibbonSystem();
-const moonSurface = createMoonSurfaceLoader(gl, () => {
-  if (paused) renderFrame(simTime, false);
-});
 
 const onPaintReady = () => {
   if (paused) renderFrame(simTime, false);
@@ -183,8 +173,8 @@ function sampleSdfB(px, py) {
 }
 
 /**
- * Finds the widest, coziest open snow clearing on the ice shelf where BOTH the sleeping
- * Polar Bear AND the Penguin's ice hole sit cleanly on open snow away from desktop icons.
+ * Finds the widest, coziest open snow clearing on the ice shelf where the sleeping
+ * Polar Bear rests cleanly away from desktop icons.
  */
 function relocateComedyStage(snap = false) {
   if (!sdfB) return;
@@ -197,14 +187,12 @@ function relocateComedyStage(snap = false) {
     const top  = cy - size * 0.5;
     const bearX = left + BEAR_NORM.x * size;
     const bearY = top  + BEAR_NORM.y * size;
-    const holeX = left + HOLE_NORM.x * size;
-    const holeY = top  + HOLE_NORM.y * size;
     return Math.min(
-      sampleSdfB(cx, cy),
       sampleSdfB(bearX, bearY),
-      sampleSdfB(bearX - size * 0.12, bearY),
-      sampleSdfB(holeX, holeY),
-      sampleSdfB(holeX + size * 0.11, holeY)
+      sampleSdfB(bearX - size * 0.16, bearY),
+      sampleSdfB(bearX + size * 0.18, bearY),
+      sampleSdfB(bearX, bearY - size * 0.16),
+      sampleSdfB(bearX, bearY + size * 0.16)
     );
   };
 
@@ -357,20 +345,16 @@ function renderFrame(t, upload2d = true, forceSync = false) {
   gl.uniform1i(U.uActorsShadowTex, 4);
 
   gl.activeTexture(gl.TEXTURE5);
-  gl.bindTexture(gl.TEXTURE_2D, moonSurface.texture);
-  gl.uniform1i(U.uMoonTex, 5);
+  gl.bindTexture(gl.TEXTURE_2D, waterTex);
+  gl.uniform1i(U.uWaterTex, 5);
 
   gl.activeTexture(gl.TEXTURE6);
-  gl.bindTexture(gl.TEXTURE_2D, waterTex);
-  gl.uniform1i(U.uWaterTex, 6);
+  gl.bindTexture(gl.TEXTURE_2D, snowTex);
+  gl.uniform1i(U.uSnowTex, 6);
 
   gl.activeTexture(gl.TEXTURE7);
-  gl.bindTexture(gl.TEXTURE_2D, snowTex);
-  gl.uniform1i(U.uSnowTex, 7);
-
-  gl.activeTexture(gl.TEXTURE8);
   gl.bindTexture(gl.TEXTURE_2D, floesTex);
-  gl.uniform1i(U.uFloesTex, 8);
+  gl.uniform1i(U.uFloesTex, 7);
 
   gl.uniform2f(U.uRes, glCanvas.width, glCanvas.height);
   gl.uniform2f(U.uGrid, field.gw, field.gh);
@@ -385,15 +369,9 @@ function renderFrame(t, upload2d = true, forceSync = false) {
   gl.uniform1f(U.uSeed, SCENE_SEED);
   gl.uniform1f(U.uSunset, sunsetMix);
   gl.uniform1f(U.uNight, nightMix);
-  gl.uniform1f(U.uMoonPhase, moonPhase);
 
   const show = P.showFriends >= 0.5;
-  const hole = actors.getHoleCss();
-  const rip = actors.getRipple();
   const rect = actors.getActorsRectCss();
-
-  gl.uniform4f(U.uHole, hole[0], hole[1], show ? hole[2] : 0, show ? hole[3] : 0);
-  gl.uniform2f(U.uHoleRipple, rip[0], rip[1]);
   gl.uniform4f(U.uActorsRect, rect[0], rect[1], show ? rect[2] : 0, show ? rect[3] : 0);
 
   gl.uniform4fv(U.uWindA, windRibbons.bufA);
@@ -494,11 +472,7 @@ const bridge = createHostBridge({
       needsInitialSettle = true;
     }
   },
-  onMoon(cfg) {
-    moonCfg = cfg;
-    moonPhase = resolveMoonConfig(moonCfg).phase;
-    if (paused) renderFrame(simTime, false);
-  },
+  onMoon() {},
   onMouse(nx, ny) {
     actors.setMouse(nx, ny);
   },

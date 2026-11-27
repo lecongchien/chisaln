@@ -34,8 +34,8 @@ import {
 
 const TEX_SIZE = 560;
 
-export const BEAR_NORM = { x: 0.37, y: 0.56 };
-export const HOLE_NORM = { x: 0.74, y: 0.57, rx: 0.142, ry: 0.106 };
+export const BEAR_NORM = { x: 0.50, y: 0.54 };
+export const HOLE_NORM = { x: 0.74, y: 0.57, rx: 0, ry: 0 };
 
 const BEAR_REF = 512;
 const BEAR_PIVOT_Y = 180 / 192;
