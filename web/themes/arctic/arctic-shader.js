@@ -58,12 +58,12 @@ const vec2 WIND_PERP  = vec2(-0.530, 0.848);
 const float PI        = 3.14159265;
 const float TAU       = 6.28318530;
 
-// Base Studio Ghibli Day watercolor reference tones (for cliffs, ink, hole, and sunset/night grading)
-const vec3 D_SNOW_HI     = vec3(0.990, 0.978, 0.942);
-const vec3 D_SNOW_WASH   = vec3(0.845, 0.868, 0.942);
-const vec3 D_SNOW_SH     = vec3(0.735, 0.775, 0.885);
-const vec3 D_ICE_WALL    = vec3(0.742, 0.832, 0.918);
-const vec3 D_ICE_SH      = vec3(0.505, 0.658, 0.802);
+// Base Studio Ghibli Day watercolor reference tones (crisp Arctic glacier snow, blue ice strata & Prussian sea)
+const vec3 D_SNOW_HI     = vec3(0.992, 0.982, 0.950);
+const vec3 D_SNOW_WASH   = vec3(0.812, 0.876, 0.948);
+const vec3 D_SNOW_SH     = vec3(0.672, 0.774, 0.892);
+const vec3 D_ICE_WALL    = vec3(0.692, 0.858, 0.938);
+const vec3 D_ICE_SH      = vec3(0.408, 0.632, 0.794);
 const vec3 D_SEA_DEEP    = vec3(0.018, 0.195, 0.305);
 const vec3 D_SEA_VIRID   = vec3(0.095, 0.545, 0.535);
 const vec3 D_SEA_AQUA    = vec3(0.325, 0.768, 0.725);
@@ -146,16 +146,47 @@ vec3 evalAurora(vec2 pCss, float t) {
   return (colA * bandA * 0.85 + colB * bandB * 0.65) * curtain;
 }
 
-// Non-repeating dual-rotated sampling of our real hand-painted Arches watercolor snow paper
+// Single-direction organic domain-warped sampling of our 1024px seamless Arctic glacier snowfield texture
+// (Preserves coherent wind-carved snowdrift orientation with ZERO 53-deg crisscross mush and ZERO tile repeat!)
 vec3 samplePaintedSnow(vec2 pCss) {
-  vec2 uv1 = pCss / 520.0;
-  // Rotate by ~53 deg at non-commensurate scale -> zero tile repetition even on 4K!
-  vec2 rP = vec2(pCss.x * 0.602 - pCss.y * 0.799, pCss.x * 0.799 + pCss.y * 0.602);
-  vec2 uv2 = (rP + vec2(173.0, -91.0)) / 710.0;
-  vec3 s1 = texture(uSnowTex, uv1).rgb;
-  vec3 s2 = texture(uSnowTex, uv2).rgb;
-  float blendW = smoothstep(0.25, 0.75, texN(pCss + vec2(uSeed * 9.0), 0.0016).r);
-  return mix(s1, s2, blendW * 0.58 + 0.21);
+  vec2 warp = (texN(pCss + vec2(uSeed * 13.0, -uSeed * 7.0), 0.00085).rg - 0.5) * 84.0;
+  vec2 uv1  = (pCss + warp) / 740.0;
+  // Same drift direction (+7.5 deg gentle organic variation at non-commensurate macro scale)
+  vec2 rP   = vec2(pCss.x * 0.991 - pCss.y * 0.131, pCss.x * 0.131 + pCss.y * 0.991);
+  vec2 uv2  = (rP - warp * 0.55 + vec2(317.0, -193.0)) / 1190.0;
+  vec3 s1   = texture(uSnowTex, uv1).rgb;
+  vec3 s2   = texture(uSnowTex, uv2).rgb;
+  float blendW = smoothstep(0.24, 0.76, texN(pCss + vec2(uSeed * 9.0, -uSeed * 5.0), 0.00105).r);
+  return mix(s1, s2, blendW * 0.64 + 0.18);
+}
+
+// Multi-scale wind-carved Arctic transverse snowdrift & sastrugi heightfield (0..1)
+// Crests run perpendicular to WIND_DIR so upwind slopes face LIGHT=(-0.60,-0.80) and leeward slip-faces shadow cool ice-blue.
+float snowDriftHeight(vec2 pCss) {
+  float uAlong = dot(pCss, WIND_DIR);
+  float uCross = dot(pCss, WIND_PERP);
+  float curl   = (texN(pCss + vec2(uSeed * 17.0, -uSeed * 11.0), 0.00135).r - 0.5) * 72.0;
+
+  // 1. Macro rolling snow-blanket pillows
+  float hMacro = texN(vec2((uAlong + curl) * 0.00185, uCross * 0.00082), 1.0).r;
+
+  // 2. Asymmetric wind-sculpted sastrugi ridges (sharper crest, smoother leeward trough)
+  float nSas   = texN(vec2((uAlong + curl * 0.85) * 0.0056, uCross * 0.00185), 1.0).g;
+  float hSas   = smoothstep(0.14, 0.88, 1.0 - abs(nSas * 2.0 - 1.0));
+
+  // 3. Fine wind-packed snow-crust ripples
+  float hFine  = texN(vec2(uAlong * 0.0155 + curl * 0.006, uCross * 0.0048), 1.0).b;
+
+  return hMacro * 0.52 + hSas * 0.34 + hFine * 0.14;
+}
+
+// Evaluates directional 3D snowdrift lighting along parallel LIGHT=(-0.60,-0.80) + height (for wind-scoured ice hollows)
+// Returns vec2(reliefLit [-1..1], height [0..1])
+vec2 evalSnowRelief(vec2 pCss) {
+  float h0 = snowDriftHeight(pCss);
+  float hL = snowDriftHeight(pCss + LIGHT * 8.5);
+  float dLit = clamp((h0 - hL) * 4.5, -1.0, 1.0);
+  return vec2(dLit, h0);
 }
 
 // Organic fluid watercolor displacement (smooth liquid currents, zero mechanical sine grids!)
@@ -702,36 +733,100 @@ void main() {
   float moonIllum = 0.5 - 0.5 * cos(uMoonPhase * TAU);
   float moonGlowAmt = mix(0.16, 1.0, pow(max(0.0001, moonIllum), 0.65)) * uNight;
 
-  // Unified parallel shoreline lighting & cliff wall thickness (consistent across Day, Sunset & Night!)
+  // Unified parallel shoreline lighting & true 2.5D foreshortened cliff wall thickness
+  // slopeL > 0 on edges facing LIGHT=(-0.60,-0.80) (sunlit/moonlit); slopeL < 0 on edges facing away (shadowed)!
   float sLight = sampleField(pCss + LIGHT * 8.5) + shoreNoise;
   float slopeL = clamp((sSurf - sLight) * 0.12, -1.0, 1.0);
-  float wallThickness = mix(10.0, 17.0, clamp(slopeL * 0.5 + 0.5, 0.0, 1.0));
+  // True 2.5D aerial foreshortening: bottom/front-facing cliffs expose taller glacier faces (~19px) than far top rims (~9.5px)
+  float southFace = clamp((sampleField(pCss + vec2(0.0, -9.0)) - rawSdf) * 0.11, -1.0, 1.0);
+  float wallThickness = mix(9.5, 19.5, southFace * 0.5 + 0.5);
   float snowMask = smoothstep(-1.0, 1.6, sSurf);
 
   // Evaluate natural brittle polyline shoreline cracks once (only inside shoreline/hole band!)
   float crackGrain = 0.72 + 0.28 * nBrush.g;
   vec3 crackEval = evalBrittleIceCracks(pCss, sSurf, wallThickness, crackGrain);
 
-  // ---- 1. Real Hand-Painted Watercolor Snow Shelf & Brittle Glacier Cracks (sSurf > -2) ----
+  // ---- 1. Realistic Hand-Painted Arctic Glacier Snowfield & 3D Sastrugi Relief (sSurf > -2) ----
   vec3 snowCol = snowHi;
   if (sSurf > -2.0) {
-    // Sample real hand-painted cold-press Arches watercolor snow paper (zero tile repeat!)
+    // Keep the sleeping Polar Bear's immediate snow bed gently smoothed + nestled into a soft snow bowl
+    float bearCalm = 1.0;
+    float bearNestRim = 0.0;
+    float bearNestBowl = 0.0;
+    if (uActorsRect.z > 1.0) {
+      vec2 bearCenter = uActorsRect.xy + vec2(0.50, 0.54) * uActorsRect.zw;
+      vec2 bDelta = (pCss - bearCenter) / max(1.0, uActorsRect.z * 0.28);
+      float dBear = length(bDelta);
+      bearCalm = smoothstep(0.60, 1.30, dBear);
+      // Concave snow-nest depression: inner wall opposite LIGHT catches soft highlight; wall toward LIGHT casts soft cool rim
+      float ringEnv = exp(-pow((dBear - 0.72) / 0.26, 2.0));
+      float nestDot = dot(normalize(bDelta + vec2(1e-4)), LIGHT);
+      bearNestRim = ringEnv * nestDot;
+      bearNestBowl = (1.0 - smoothstep(0.25, 0.88, dBear));
+    }
+
+    // 1A. Real 1024px seamless hand-painted Arctic glacier snowfield (single-direction organic warp)
     vec3 paintedSnow = samplePaintedSnow(pCss);
     snowCol = gradeSnowArt(paintedSnow, auroraCol);
 
-    // Gentle sunlit warm crest & periwinkle snow-hollow wash right along the fractured ice cliff
-    float rimZone = smoothstep(0.0, 14.0, sSurf) * (1.0 - smoothstep(14.0, 36.0, sSurf));
-    snowCol = mix(snowCol, snowHi, rimZone * clamp(-slopeL, 0.0, 1.0) * 0.45);
-    snowCol = mix(snowCol, snowWash, rimZone * clamp(slopeL, 0.0, 1.0) * 0.48);
+    // 1B. True 3D directional wind-carved sastrugi & snowdrift normal relief along LIGHT=(-0.60,-0.80)
+    vec2 snowRel = evalSnowRelief(pCss);
+    float reliefLit = snowRel.x * mix(0.28, 1.0, bearCalm);
+    float driftH    = snowRel.y;
+
+    // Windward sunlit crests brighten toward luminous ivory/alpenglow/moonlight; leeward hollows drop into crisp ice-blue shadow!
+    float crestBoost  = smoothstep(0.06, 0.82, reliefLit);
+    float hollowShade = smoothstep(0.05, 0.86, -reliefLit);
+    snowCol = mix(snowCol, snowHi,   crestBoost  * mix(0.32, 0.24, uNight));
+    snowCol = mix(snowCol, snowWash, hollowShade * mix(0.34, 0.40, uNight));
+    // Deepest leeward drift crease gets a whisper of crisp glacier-blue core shadow
+    snowCol = mix(snowCol, snowSh,   smoothstep(0.45, 0.95, -reliefLit) * mix(0.18, 0.24, uNight));
+
+    // 1C. Subtle wind-scoured glacier blue-ice translucency showing beneath thin snow in deep hollows
+    float thinSnowPatch = smoothstep(0.58, 0.84, 1.0 - driftH)
+                        * smoothstep(18.0, 95.0, sSurf)
+                        * bearCalm
+                        * (0.65 + 0.35 * nMacro.g);
+    vec3 glacierUnderIce = mix(mix(vec3(0.755, 0.895, 0.945), vec3(0.615, 0.655, 0.795), uSunset),
+                               vec3(0.225, 0.415, 0.545), uNight);
+    snowCol = mix(snowCol, glacierUnderIce, thinSnowPatch * 0.24);
+
+    // 1D. Soft concave snow-nest impression physically grounding the sleeping Polar Bear into the snow
+    if (bearNestBowl > 0.005 || abs(bearNestRim) > 0.005) {
+      snowCol = mix(snowCol, snowWash, bearNestBowl * 0.14);
+      snowCol = mix(snowCol, snowWash, clamp(bearNestRim, 0.0, 1.0) * 0.18);
+      snowCol = mix(snowCol, snowHi,   clamp(-bearNestRim, 0.0, 1.0) * 0.16);
+    }
+
+    // 1E. Glacial-ice subsurface scattering (SSS) & beveled overhanging snow cornice along fractured rim
+    float rimSss = exp(-max(0.0, sSurf) / 19.0) * smoothstep(-1.0, 3.0, sSurf);
+    vec3 sssIceCol = mix(mix(vec3(0.685, 0.892, 0.958), vec3(0.625, 0.685, 0.845), uSunset),
+                         vec3(0.265, 0.525, 0.685), uNight);
+    // Light scattering through the translucent fractured ice rim is strongest on sunlit/moonlit margins
+    float sssLitGain = 0.55 + 0.45 * clamp(slopeL, 0.0, 1.0);
+    snowCol = mix(snowCol, sssIceCol, rimSss * 0.26 * sssLitGain * (0.72 + 0.28 * nBrush.r));
+
+    // Rounded snow-cornice bevel right before the vertical drop-off (physically aligned with slopeL!)
+    float corniceBand = smoothstep(0.0, 7.5, sSurf) * (1.0 - smoothstep(7.5, 28.0, sSurf));
+    snowCol = mix(snowCol, snowHi,   corniceBand * clamp(slopeL,  0.0, 1.0) * 0.48);
+    snowCol = mix(snowCol, snowWash, corniceBand * clamp(-slopeL, 0.0, 1.0) * 0.42);
+    // Crisp narrow sunlit snow lip right at sSurf in [0.5..4.5px] on LIGHT-facing ledges
+    float lipHighlight = exp(-pow((sSurf - 2.4) / 2.6, 2.0)) * clamp(slopeL, 0.0, 1.0);
+    snowCol = mix(snowCol, snowHi, lipHighlight * 0.52);
+
+    // 1F. Tactile fine compacted snow-powder micro-grain (crisp dry snow crystals, zero plastic!)
+    float snowMicroGrain = (nPaper.r - 0.5) * 0.036 + (nFine.g - 0.5) * 0.022;
+    snowCol *= 1.0 + snowMicroGrain;
 
     // Uniform parallel silvery-blue Moonlight irradiance across the entire snow shelf (scaled by Moon Phase!)
     if (moonGlowAmt > 0.01) {
       vec3 moonTint = vec3(0.76, 0.89, 1.00);
-      // Even planar snow receives uniform directional moonlight; crests facing LIGHT catch extra silver rim
-      float moonSnowWash = 0.24 * moonGlowAmt;
-      float moonCrest = rimZone * clamp(-slopeL, 0.0, 1.0) * 0.62 * moonGlowAmt;
+      // Even planar snow receives uniform directional moonlight; upwind crests & LIGHT-facing rims catch silver highlight
+      float moonSnowWash  = 0.24 * moonGlowAmt;
+      float moonDriftLit  = crestBoost * 0.36 * moonGlowAmt;
+      float moonRimCrest  = corniceBand * clamp(slopeL, 0.0, 1.0) * 0.62 * moonGlowAmt;
       snowCol = mix(snowCol, snowCol * 1.22 + moonTint * 0.11, moonSnowWash);
-      snowCol += moonTint * moonCrest * 0.30;
+      snowCol += moonTint * (moonRimCrest * 0.28 + moonDriftLit * 0.16);
     }
 
     // Composite sparse, crisp brittle polyline glacier cracks (matte pale-ice wash + dip-pen ink!)
@@ -848,34 +943,66 @@ void main() {
     applyPaintedIceFloes(seaCol, pCss, sSurf, uWindTime, seaDeep, seaVirid, auroraCol);
   }
 
-  // ---- 3. Stepped Matte Hand-Inked Glacial Ice Cliff Joining Sea & Snow Shelf ----
+  // ---- 3. 3-Layer Stratified Hand-Inked Glacial Ice Cliff (Snow Cap -> Blue Ice Strata -> Wet Undercut) ----
   float wallBottom = -wallThickness + shoreWaveOffset * 0.40;
   float wallMask = smoothstep(wallBottom, wallBottom + 2.2, sSurf) * (1.0 - smoothstep(-0.8, 1.6, sSurf));
 
   vec3 wallCol = iceWall;
   if (wallMask > 0.004) {
-    // Stepped matte watercolor facet planes (flat painted watercolor washes, NOT smooth plastic!)
-    float facetCoord = pCss.x * 0.042 + pCss.y * 0.028 + nMid.r * 1.4;
-    float facetId = hash2(vec2(floor(facetCoord), 11.3));
-    float facetBand = floor(facetId * 3.0) / 2.0; // crisp 3-step matte watercolor wash tones
-    float facetLine = (1.0 - smoothstep(0.0, 0.075, abs(fract(facetCoord) - 0.5) * 2.0))
-                    * (0.62 + 0.38 * nBrush.g);
-
     float wallDepthT = clamp(-sSurf / max(1.0, wallThickness), 0.0, 1.0);
-    // Modulate flat matte ice-cliff wash with real cold-press watercolor paper grain from uSnowTex!
+    // True parallel directional face illumination (slopeL > 0 faces LIGHT, slopeL < 0 faces away into shadow!)
+    float cliffLit = clamp(slopeL * 0.55 + 0.48, 0.0, 1.0);
+
+    // Irregular crystal cleavage facet planes along the fractured glacier wall
+    float facetCoord = pCss.x * 0.038 + pCss.y * 0.031 + nMid.r * 1.85 + nBrush.r * 0.45;
+    float facetId = hash2(vec2(floor(facetCoord), 11.3));
+    float facetBand = floor(facetId * 4.0) / 3.0; // crisp 4-step chiseled glacier ice tones
+    float facetLine = (1.0 - smoothstep(0.0, 0.072, abs(fract(facetCoord) - 0.5) * 2.0))
+                    * (0.58 + 0.42 * nBrush.g);
+
+    // Subtle horizontal sedimentary freeze-thaw glacial compression strata
+    float strataBand = 0.5 + 0.5 * sin(wallDepthT * 17.5 + nMid.g * 3.8 + facetId * 2.2);
+
+    // Real cold-press paper tooth & fine fracture texture
     vec3 paperTint = samplePaintedSnow(pCss * 1.25);
     float paperLum = dot(paperTint, vec3(0.30, 0.50, 0.20));
-    wallCol = mix(iceWall, iceSh, mix(0.18, 0.72, facetBand) * 0.65 + wallDepthT * 0.42);
-    wallCol *= (0.88 + 0.16 * paperLum);
-    // Subtle dark wet-ice tone right along the waterline
-    wallCol = mix(wallCol, mix(seaVirid, iceSh, 0.58), smoothstep(0.72, 1.0, wallDepthT) * 0.42);
+
+    // Layer B (Middle ~52%): Faceted translucent compressed cerulean-blue glacial ice strata
+    vec3 brightGlacierIce = mix(iceWall, mix(iceWall, snowHi, 0.26), cliffLit);
+    vec3 deepGlacierIce   = mix(iceSh, mix(iceSh, seaDeep, 0.28), 1.0 - cliffLit);
+    vec3 glacierIceCol    = mix(brightGlacierIce, deepGlacierIce,
+                                mix(0.14, 0.78, facetBand) * 0.62 + wallDepthT * 0.34);
+    glacierIceCol *= 0.90 + 0.14 * paperLum + (strataBand - 0.5) * 0.075;
+
+    // Layer A (Top ~26%): Compacted white overhanging snow cornice cap resting atop solid glacial ice
+    float snowCapEdge = 0.23 + 0.10 * nBrush.r + 0.04 * (facetId - 0.5);
+    float snowCapMask = 1.0 - smoothstep(snowCapEdge - 0.045, snowCapEdge + 0.045, wallDepthT);
+    vec3 snowCapCol   = mix(mix(snowWash, snowSh, 0.38), snowHi, 0.45 + 0.45 * cliffLit);
+    snowCapCol *= 0.94 + 0.08 * paperLum;
+
+    // Crisp ambient-occlusion overhang shadow cast by the snow cap directly onto the glacial ice below!
+    float capShadow = exp(-pow((wallDepthT - (snowCapEdge + 0.055)) / 0.085, 2.0))
+                    * smoothstep(snowCapEdge - 0.02, snowCapEdge + 0.03, wallDepthT);
+    wallCol = mix(glacierIceCol, snowCapCol, snowCapMask);
+    wallCol *= 1.0 - capShadow * mix(0.28, 0.38, 1.0 - cliffLit);
+
+    // Layer C (Bottom ~22%): Dark wave-eroded wet waterline undercut hugging the cold Arctic sea
+    float wetUndercut = smoothstep(0.73, 0.98, wallDepthT);
+    vec3 wetIceCol = mix(seaDeep * 1.15, mix(seaVirid, iceSh, 0.46), 0.56);
+    wallCol = mix(wallCol, wetIceCol, wetUndercut * 0.64);
+    // Faint translucent pale-aqua sea-foam/wet-rim meniscus right where water laps the cliff base
+    float wetLine = exp(-pow((wallDepthT - 0.92) / 0.055, 2.0)) * (0.55 + 0.45 * nBrush.r);
+    wallCol = mix(wallCol, mix(seaAqua, iceWall, 0.45), wetLine * mix(0.24, 0.14, uNight));
+
     // Luminous silver moonlit highlight along fractured ice-cliff faces angled toward parallel LIGHT!
     if (moonGlowAmt > 0.01) {
-      float cliffMoonLit = clamp(0.25 - slopeL * 0.75, 0.0, 1.0);
-      wallCol += vec3(0.58, 0.80, 0.98) * cliffMoonLit * (1.0 - wallDepthT * 0.55) * moonGlowAmt * 0.28;
+      float cliffMoonLit = clamp(0.25 + slopeL * 0.75, 0.0, 1.0);
+      wallCol += vec3(0.58, 0.80, 0.98) * cliffMoonLit * (1.0 - wallDepthT * 0.52) * moonGlowAmt * 0.30;
     }
-    // Crisp broken dip-pen vertical fracture strokes & connected 3D vertical cliff drops from surface cracks!
-    wallCol = mix(wallCol, inkCol, clamp(facetLine * 0.42 + crackEval.z * 0.78, 0.0, 0.85));
+
+    // Crisp broken dip-pen vertical cleavage strokes & connected 3D vertical cliff drops from surface cracks!
+    float iceOnlyMask = 1.0 - snowCapMask * 0.68;
+    wallCol = mix(wallCol, inkCol, clamp(facetLine * 0.38 * iceOnlyMask + crackEval.z * 0.78, 0.0, 0.84));
   }
 
   // Crisp broken hand-inked pen contour lines along top snow overhang & lower waterline base
