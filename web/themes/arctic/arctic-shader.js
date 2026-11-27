@@ -113,7 +113,10 @@ float sampleField(vec2 pCss) {
 // Harmonious Day -> Alpenglow Sunset -> Moonlit Aurora Night grading for painted snow & floes
 vec3 gradeSnowArt(vec3 c, vec3 auroraCol) {
   vec3 sunsetCol = c * vec3(1.01, 0.86, 0.83) + vec3(0.035, 0.008, 0.028) * (1.0 - c.b);
-  vec3 nightCol  = c * vec3(0.39, 0.52, 0.67) + auroraCol * 0.16;
+  // Harmonize snow chroma at night so delicate periwinkle drifts stay silky blue-silver (zero harsh purple stains!)
+  float snowLum  = dot(c, vec3(0.32, 0.46, 0.22));
+  vec3 nightBase = mix(vec3(0.95), mix(vec3(snowLum), c, 0.45), 0.78);
+  vec3 nightCol  = nightBase * vec3(0.40, 0.53, 0.68) + auroraCol * 0.16;
   return mix(mix(c, sunsetCol, uSunset * 0.88), nightCol, uNight * 0.90);
 }
 
