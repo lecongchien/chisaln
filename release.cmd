@@ -83,7 +83,7 @@ echo   Track build progress (~2 min):
 echo     https://github.com/lecongchien/chisaln/actions
 echo.
 echo   Public auto-update release (once green):
-echo     https://github.com/lecongchien/chisaln-releases/releases/tag/%TAG%
+echo     https://github.com/lecongchien/chisaln/releases/tag/%TAG%
 echo ====================================================================
 pause
 exit /b 0

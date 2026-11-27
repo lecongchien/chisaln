@@ -42,7 +42,7 @@ struct UpdateStatusSnapshot {
 /// with CryptoKit, and atomically swapping Scream.app with rollback protection.
 final class AppUpdater: NSObject, URLSessionDownloadDelegate {
     private static let defaultManifestUrl =
-        "https://github.com/lecongchien/chisaln-releases/releases/latest/download/latest.json"
+        "https://github.com/lecongchien/chisaln/releases/latest/download/latest.json"
 
     private static let initialCheckDelaySec: TimeInterval = 15
     private static let periodicCheckIntervalSec: TimeInterval = 4 * 3600

@@ -23,7 +23,7 @@ echo [2/4] Publishing self-contained compressed single-file win-x64 build (v%APP
 if exist "%STAGE_DIR%" rmdir /s /q "%STAGE_DIR%"
 mkdir "%STAGE_DIR%" >nul 2>&1
 
-if "%SCREAM_UPDATE_REPO%"=="" set "SCREAM_UPDATE_REPO=lecongchien/chisaln-releases"
+if "%SCREAM_UPDATE_REPO%"=="" set "SCREAM_UPDATE_REPO=lecongchien/chisaln"
 
 dotnet publish ".\Scream.csproj" ^
   -c Release ^

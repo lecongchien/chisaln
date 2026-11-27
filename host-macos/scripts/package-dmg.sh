@@ -30,7 +30,7 @@ else
 fi
 APP_VER="${APP_VER:-1.0.0}"
 SIGN_IDENTITY="${SIGN_IDENTITY:--}"
-UPDATE_REPO="${SCREAM_UPDATE_REPO:-lecongchien/chisaln-releases}"
+UPDATE_REPO="${SCREAM_UPDATE_REPO:-lecongchien/chisaln}"
 UPDATE_MANIFEST_URL="${SCREAM_UPDATE_MANIFEST_URL:-https://github.com/${UPDATE_REPO}/releases/latest/download/latest.json}"
 
 echo "===================================================================="

@@ -17,7 +17,7 @@
     <Product>Scream Adaptive Wallpaper</Product>
     <Company>Scream</Company>
     <Description>Adaptive Studio Ghibli Live Wallpaper for Windows Desktop</Description>
-    <ScreamUpdateRepo Condition="'$(ScreamUpdateRepo)' == ''">lecongchien/chisaln-releases</ScreamUpdateRepo>
+    <ScreamUpdateRepo Condition="'$(ScreamUpdateRepo)' == ''">lecongchien/chisaln</ScreamUpdateRepo>
     <ScreamUpdateManifestUrl Condition="'$(ScreamUpdateManifestUrl)' == ''">https://github.com/$(ScreamUpdateRepo)/releases/latest/download/latest.json</ScreamUpdateManifestUrl>
   </PropertyGroup>
 

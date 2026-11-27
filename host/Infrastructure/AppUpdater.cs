@@ -37,7 +37,7 @@ namespace Scream.Infrastructure
     internal sealed class AppUpdater : IDisposable
     {
         private const string DefaultManifestUrl =
-            "https://github.com/lecongchien/chisaln-releases/releases/latest/download/latest.json";
+            "https://github.com/lecongchien/chisaln/releases/latest/download/latest.json";
 
         private static readonly TimeSpan InitialCheckDelay = TimeSpan.FromSeconds(15);
         private static readonly TimeSpan PeriodicCheckInterval = TimeSpan.FromHours(4);

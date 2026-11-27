@@ -4,10 +4,10 @@ set -euo pipefail
 # Scream Adaptive Wallpaper — 1-Line macOS Installer (Apple Silicon + Intel)
 # Installs latest Scream.app from GitHub Releases directly into Applications and launches immediately.
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/lecongchien/chisaln-releases/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/lecongchien/chisaln/main/host-macos/scripts/install.sh | bash
 #   (or override with SCREAM_REPO="owner/repo")
 
-REPO="${SCREAM_REPO:-lecongchien/chisaln-releases}"
+REPO="${SCREAM_REPO:-lecongchien/chisaln}"
 MANIFEST_URL="https://github.com/${REPO}/releases/latest/download/latest.json"
 API_URL="https://api.github.com/repos/${REPO}/releases/latest"
 
