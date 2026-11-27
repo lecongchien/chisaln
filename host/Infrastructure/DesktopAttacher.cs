@@ -92,15 +92,15 @@ namespace Scream.Infrastructure
             IntPtr classicWorker = FindClassicWorker(progman);
             IntPtr defViewInProgman = Native.FindWindowEx(progman, IntPtr.Zero, "SHELLDLL_DefView", null);
 
-            // Fast-path Windows 11 24H2+ ("Raised Desktop"): Progman natively hosts SHELLDLL_DefView
-            // and system WorkerW children directly — skip blocking WM_SPAWN_WORKER + Thread.Sleep polling!
-            bool isWin11RaisedDesktop =
+            // On Windows 11 24H2/25H2 (Build 26100+), Progman ONLY enters Raised Desktop layered-composition
+            // mode (separating static wallpaper into a child WorkerW behind SHELLDLL_DefView) AFTER receiving
+            // WM_SPAWN_WORKER (0x052C). Only skip RequestWorkerW when the child WorkerW ALREADY exists!
+            bool raisedWorkerAlreadyExists =
                 classicWorker == IntPtr.Zero &&
                 defViewInProgman != IntPtr.Zero &&
-                (Environment.OSVersion.Version.Build >= 26100 ||
-                 Native.FindWindowEx(progman, IntPtr.Zero, "WorkerW", null) != IntPtr.Zero);
+                Native.FindWindowEx(progman, IntPtr.Zero, "WorkerW", null) != IntPtr.Zero;
 
-            if (classicWorker == IntPtr.Zero && !isWin11RaisedDesktop)
+            if (classicWorker == IntPtr.Zero && !raisedWorkerAlreadyExists)
             {
                 RequestWorkerW(progman, () =>
                     FindClassicWorker(progman) != IntPtr.Zero ||
