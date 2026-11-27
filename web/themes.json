@@ -86,7 +86,7 @@
             {
               "key": "aurora",
               "label": { "vi": "Cực quang (Ban đêm)", "en": "Aurora Borealis (Night)" },
-              "hint": { "vi": "Cường độ dải cực quang xanh lục – tím phản chiếu trên mặt biển băng", "en": "Intensity of shimmering emerald-violet northern lights reflected on the glacial sea" },
+              "hint": { "vi": "Cường độ dải cực quang xanh lục – tím hòa cùng ánh trăng phản chiếu trên biển băng", "en": "Intensity of shimmering emerald-violet northern lights alongside the moonlit glacial sea" },
               "min": 0,
               "max": 1,
               "step": 0.05,
@@ -110,8 +110,8 @@
             },
             {
               "key": "mischief",
-              "label": { "vi": "Tần suất trở mình ngủ", "en": "Sleep Stir Frequency" },
-              "hint": { "vi": "Nhịp chú gấu khẽ giật tai, rúc sâu vào tay bông và thổi bóng ngủ mới", "en": "How often the sleeping bear twitches an ear, snuggles into its paws, and blows a fresh sleep bubble" },
+              "label": { "vi": "Nhịp giật tai & thở dài", "en": "Ear Twitch & Sigh Pace" },
+              "hint": { "vi": "Tần suất chú gấu khẽ giật tai và thở làn hơi ấm nhẹ trong lúc ngủ say", "en": "How often the sleeping bear gently twitches an ear and lets out a cozy warm breath sigh" },
               "min": 0.5,
               "max": 2.0,
               "step": 0.1,
@@ -120,8 +120,8 @@
             },
             {
               "key": "showBubbles",
-              "label": { "vi": "Chữ Zzz mơ màng", "en": "Floating Zzz" },
-              "hint": { "vi": "Hiện các chữ Zzz mềm mại bay lên khi chú gấu đang ngủ say", "en": "Show gentle floating Zzz letters while the polar bear sleeps" },
+              "label": { "vi": "Bóng ngủ & chữ Zzz", "en": "Sleep Bubble & Zzz" },
+              "hint": { "vi": "Hiện bóng ngủ màu nước phập phồng theo nhịp thở và chữ Zzz bay nhẹ", "en": "Show the gentle watercolor sleep bubble breathing with the bear and floating Zzz letters" },
               "options": {
                 "vi": ["Ẩn", "Hiện"],
                 "en": ["Hide", "Show"]

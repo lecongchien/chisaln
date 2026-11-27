@@ -17,6 +17,7 @@ import {
   createPerfGovernor
 } from '../../core/field-engine.js';
 import { createHostBridge } from '../../core/host-bridge.js';
+import { resolveMoonConfig, createMoonSurfaceLoader } from '../../core/moon-phase.js';
 import { ARCTIC_FS } from './arctic-shader.js';
 import { createArcticActorsController, BEAR_NORM } from './arctic-actors.js';
 import { createWindRibbonSystem } from './arctic-wind.js';
@@ -73,6 +74,7 @@ function bindArcticUniforms(program) {
     uNoise: gl.getUniformLocation(program, 'uNoise'),
     uActorsTex: gl.getUniformLocation(program, 'uActorsTex'),
     uActorsShadowTex: gl.getUniformLocation(program, 'uActorsShadowTex'),
+    uMoonTex: gl.getUniformLocation(program, 'uMoonTex'),
     uWaterTex: gl.getUniformLocation(program, 'uWaterTex'),
     uSnowTex: gl.getUniformLocation(program, 'uSnowTex'),
     uFloesTex: gl.getUniformLocation(program, 'uFloesTex'),
@@ -89,6 +91,8 @@ function bindArcticUniforms(program) {
     uSeed: gl.getUniformLocation(program, 'uSeed'),
     uSunset: gl.getUniformLocation(program, 'uSunset'),
     uNight: gl.getUniformLocation(program, 'uNight'),
+    uMoonPhase: gl.getUniformLocation(program, 'uMoonPhase'),
+    uMoonPos: gl.getUniformLocation(program, 'uMoonPos'),
     uActorsRect: gl.getUniformLocation(program, 'uActorsRect'),
     uWindA: gl.getUniformLocation(program, 'uWindA'),
     uWindB: gl.getUniformLocation(program, 'uWindB'),
@@ -155,11 +159,17 @@ const SCENE_SEED = 41.7;
 
 let simTime = 0, flowTime = 0, lastRaf = 0, lastDraw = 0;
 let sunsetMix = 0, nightMix = 0, moodInitialized = false;
+let moonCfg = { mode: 'full', date: '2000-08-15' };
+let moonPhase = 0.5;
+const moonAnchor = { x: 240, y: 180, r: 48 };
 
 const actors = createArcticActorsController(gl, () => {
   if (paused) renderFrame(simTime, true);
 });
 const windRibbons = createWindRibbonSystem();
+const moonSurface = createMoonSurfaceLoader(gl, () => {
+  if (paused) renderFrame(simTime, false);
+});
 
 const onPaintReady = () => {
   if (paused) renderFrame(simTime, false);
@@ -196,8 +206,9 @@ function relocateComedyStage(snap = false) {
     );
   };
 
-  // Keep existing stage anchor if it still sits comfortably on open snow
+  // Keep existing stage anchor if it still sits comfortably on open snow (still refresh open-water Moon spot!)
   if (actors.state.initialized && !snap && evalClearance(actors.state.x, actors.state.y) > 48) {
+    relocateMoonSpot();
     return;
   }
 
@@ -225,6 +236,49 @@ function relocateComedyStage(snap = false) {
   actors.state.x = best.x;
   actors.state.y = best.y;
   actors.state.initialized = true;
+  relocateMoonSpot();
+}
+
+/**
+ * Finds the widest open glacial sea bay (most negative SDF away from snow cliffs)
+ * so the 3D Moon reflection shines cleanly on dark moving water and casts natural
+ * moonlight across the adjacent ice cliffs, snow shelf, and sleeping Polar Bear.
+ */
+function relocateMoonSpot() {
+  if (!sdfB) return;
+  const r = Math.round(Math.max(36, Math.min(60, Math.min(W, H) * 0.056)));
+  moonAnchor.r = r;
+
+  const padX = Math.max(r * 1.45, W * 0.08);
+  const padY = Math.max(r * 1.35, H * 0.10);
+  const prefX = W * 0.22;
+  const prefY = H * 0.26;
+
+  let best = { x: prefX, y: prefY, score: -1e9 };
+  const cols = 16, rows = 10;
+  for (let gy = 0; gy < rows; gy++) {
+    const py = padY + (gy / (rows - 1)) * Math.max(10, H - padY * 2);
+    for (let gx = 0; gx < cols; gx++) {
+      const px = padX + (gx / (cols - 1)) * Math.max(10, W - padX * 2);
+      // Negative SDF means open water; take max (least negative) around disc perimeter to keep disc off cliffs!
+      const worstSdf = Math.max(
+        sampleSdfB(px, py),
+        sampleSdfB(px - r * 0.72, py),
+        sampleSdfB(px + r * 0.72, py),
+        sampleSdfB(px, py - r * 0.72),
+        sampleSdfB(px, py + r * 0.72)
+      );
+      const waterOpen = -worstSdf;
+      const distPref = Math.hypot((px - prefX) / Math.max(1, W), (py - prefY) / Math.max(1, H));
+      // Strongly prefer genuine open ocean bays while favoring scenic upper-third framing
+      const score = Math.min(waterOpen, 120) - distPref * 38;
+      if (score > best.score) {
+        best = { x: px, y: py, score };
+      }
+    }
+  }
+  moonAnchor.x = best.x;
+  moonAnchor.y = best.y;
 }
 
 const perf = createPerfGovernor({
@@ -345,16 +399,20 @@ function renderFrame(t, upload2d = true, forceSync = false) {
   gl.uniform1i(U.uActorsShadowTex, 4);
 
   gl.activeTexture(gl.TEXTURE5);
-  gl.bindTexture(gl.TEXTURE_2D, waterTex);
-  gl.uniform1i(U.uWaterTex, 5);
+  gl.bindTexture(gl.TEXTURE_2D, moonSurface.texture);
+  gl.uniform1i(U.uMoonTex, 5);
 
   gl.activeTexture(gl.TEXTURE6);
-  gl.bindTexture(gl.TEXTURE_2D, snowTex);
-  gl.uniform1i(U.uSnowTex, 6);
+  gl.bindTexture(gl.TEXTURE_2D, waterTex);
+  gl.uniform1i(U.uWaterTex, 6);
 
   gl.activeTexture(gl.TEXTURE7);
+  gl.bindTexture(gl.TEXTURE_2D, snowTex);
+  gl.uniform1i(U.uSnowTex, 7);
+
+  gl.activeTexture(gl.TEXTURE8);
   gl.bindTexture(gl.TEXTURE_2D, floesTex);
-  gl.uniform1i(U.uFloesTex, 7);
+  gl.uniform1i(U.uFloesTex, 8);
 
   gl.uniform2f(U.uRes, glCanvas.width, glCanvas.height);
   gl.uniform2f(U.uGrid, field.gw, field.gh);
@@ -369,6 +427,8 @@ function renderFrame(t, upload2d = true, forceSync = false) {
   gl.uniform1f(U.uSeed, SCENE_SEED);
   gl.uniform1f(U.uSunset, sunsetMix);
   gl.uniform1f(U.uNight, nightMix);
+  gl.uniform1f(U.uMoonPhase, moonPhase);
+  gl.uniform3f(U.uMoonPos, moonAnchor.x, moonAnchor.y, moonAnchor.r);
 
   const show = P.showFriends >= 0.5;
   const rect = actors.getActorsRectCss();
@@ -472,7 +532,11 @@ const bridge = createHostBridge({
       needsInitialSettle = true;
     }
   },
-  onMoon() {},
+  onMoon(cfg) {
+    moonCfg = cfg;
+    moonPhase = resolveMoonConfig(moonCfg).phase;
+    if (paused) renderFrame(simTime, false);
+  },
   onMouse(nx, ny) {
     actors.setMouse(nx, ny);
   },
