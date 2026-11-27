@@ -110,8 +110,8 @@
             },
             {
               "key": "mischief",
-              "label": { "vi": "Tần suất mơ ngủ", "en": "Dream Stir Frequency" },
-              "hint": { "vi": "Nhịp chú gấu mỉm cười, khẽ rúc vào tay và thổi bóng mới trong giấc mơ", "en": "How often the sleeping bear smiles, snuggles in its dream, and blows a fresh sleep bubble" },
+              "label": { "vi": "Tần suất trở mình ngủ", "en": "Sleep Stir Frequency" },
+              "hint": { "vi": "Nhịp chú gấu khẽ giật tai, rúc sâu vào tay bông và thổi bóng ngủ mới", "en": "How often the sleeping bear twitches an ear, snuggles into its paws, and blows a fresh sleep bubble" },
               "min": 0.5,
               "max": 2.0,
               "step": 0.1,

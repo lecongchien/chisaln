@@ -6,10 +6,9 @@
  * breathing deformation on WebGL2 GPU FBOs (~0.02ms/frame):
  *   - `SLEEPING`: Continuous 60 FPS mammalian breathing (`bearSettleLoop <-> bearSleepMid <-> bearSleepInhale`)
  *     with rhythmic translucent watercolor sleep bubble at the nose tip and drifting soft `z` letters.
- *   - `DREAM_STIR`: Occasional serene dream moment — sleep bubble gently pops into mist, ear twitches with
- *     a tickled squint (`bearPeekSquint`), warms into a rosy-cheeked happy dreaming smile (`bearDrowsySmile`),
- *     snuggles deeper into its fluffy front paw (`bearSnuggle`), lets out a soft warm breath puff, and
- *     settles smoothly back into deep sleep.
+ *   - `DREAM_STIR`: Occasional serene sleep stir — sleep bubble gently pops into mist, ear twitches with
+ *     a tickled squint (`bearPeekSquint`), snuggles deeper into its fluffy front paw (`bearSnuggle`),
+ *     lets out a soft warm breath puff, and settles smoothly back into deep sleep.
  */
 
 import {
@@ -47,15 +46,15 @@ const sstep = (a, b, x) => {
   return t * t * (3 - 2 * t);
 };
 
-// Peaceful curled-up dream-stir sequence (100% backed by 128px baked optical-flow pairs!)
+// Peaceful curled-up dream-stir sequence (zero smiling frame; 100% backed by 128px baked optical-flow pairs!)
 const BEAR_DREAM_STOPS = [
   [0.00, 'bearSleepMid'],
-  [0.14, 'bearPeekSquint'],
-  [0.28, 'bearSleepMid'],
-  [0.44, 'bearDrowsySmile'],
-  [0.60, 'bearDrowsySmile'],
-  [0.76, 'bearSnuggle'],
-  [0.89, 'bearSettleLoop'],
+  [0.16, 'bearPeekSquint'],
+  [0.32, 'bearSleepMid'],
+  [0.46, 'bearSettleLoop'],
+  [0.64, 'bearSnuggle'],
+  [0.78, 'bearSnuggle'],
+  [0.90, 'bearSettleLoop'],
   [1.00, 'bearSleepMid']
 ];
 
