@@ -201,8 +201,8 @@ export const THEME_THUMBS = {
 
 export const THEME_SUBTITLES = {
   arctic: {
-    vi: 'Biển băng ôm icon · Gấu ngủ & Cánh cụt',
-    en: 'Glacial sea icons · Bear & Penguin'
+    vi: 'Biển băng ôm icon · Gấu trắng ngủ đông',
+    en: 'Glacial sea icons · Sleeping Polar Bear'
   },
   skyship: {
     vi: 'Biển mây ráng chiều · Thuyền buồm bay',

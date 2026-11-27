@@ -7,11 +7,11 @@
       "status": "ready",
       "name": {
         "vi": "Bắc Cực & Gấu Trắng",
-        "en": "Arctic Bear & Penguin"
+        "en": "Arctic Polar Bear"
       },
       "desc": {
-        "vi": "Biển băng xanh sâu ôm lấy icon, thềm tuyết trắng có gấu trắng nằm ngủ khò bị chú cánh cụt khăn đỏ tinh nghịch ló đầu trêu chọc.",
-        "en": "Deep glacial sea cradling your icons around a snowy ice shelf where a red-scarf penguin cheekily pranks a sleeping polar bear."
+        "vi": "Biển băng xanh sâu ôm lấy icon, thềm tuyết màu nước có chú gấu Bắc Cực nằm cuộn tròn ngủ êm bên hố băng ngọc bích.",
+        "en": "Deep glacial sea cradling your icons around a snowy watercolor ice shelf where a polar bear sleeps peacefully beside an aquamarine ice pool."
       },
       "accent": "#1B6B93",
       "groups": [
@@ -96,12 +96,12 @@
           ]
         },
         {
-          "name": { "vi": "Bộ đôi Gấu Trắng & Cánh Cụt", "en": "Polar Bear & Penguin" },
+          "name": { "vi": "Gấu Bắc Cực ngủ đông", "en": "Sleeping Polar Bear" },
           "params": [
             {
               "key": "showFriends",
-              "label": { "vi": "Gấu trắng & Cánh cụt", "en": "Bear & Penguin Duo" },
-              "hint": { "vi": "Hiện gấu trắng nằm ngủ bên lỗ băng cùng chú cánh cụt khăn đỏ thích chọc phá", "en": "Show the sleeping polar bear and the mischievous red-scarf penguin" },
+              "label": { "vi": "Gấu trắng & Hố băng", "en": "Polar Bear & Ice Pool" },
+              "hint": { "vi": "Hiện chú gấu Bắc Cực nằm ngủ êm bên hố băng phản chiếu trăng và cực quang", "en": "Show the sleeping polar bear beside the moon-reflecting aquamarine ice pool" },
               "options": {
                 "vi": ["Ẩn", "Hiện"],
                 "en": ["Hide", "Show"]
@@ -110,8 +110,8 @@
             },
             {
               "key": "mischief",
-              "label": { "vi": "Độ nghịch của cánh cụt", "en": "Penguin Mischief" },
-              "hint": { "vi": "Tần suất chú cánh cụt ngó đầu trêu chọc làm gấu trắng giật mình thức giấc", "en": "How frequently the penguin pops out to startle the sleeping bear" },
+              "label": { "vi": "Tần suất mơ ngủ", "en": "Dream Stir Frequency" },
+              "hint": { "vi": "Nhịp chú gấu mỉm cười, khẽ rúc vào tay và thổi bóng mới trong giấc mơ", "en": "How often the sleeping bear smiles, snuggles in its dream, and blows a fresh sleep bubble" },
               "min": 0.5,
               "max": 2.0,
               "step": 0.1,
@@ -120,8 +120,8 @@
             },
             {
               "key": "showBubbles",
-              "label": { "vi": "Biểu cảm hoạt hình (Zzz / ! / ?)", "en": "Comic Reactions (Zzz / ! / ?)" },
-              "hint": { "vi": "Hiện ký hiệu Zzz khi ngủ, dấu ! lúc giật mình và dấu ? khi gấu ngơ ngác", "en": "Show playful floating Zzz, startled !, and confused ? icons" },
+              "label": { "vi": "Chữ Zzz mơ màng", "en": "Floating Zzz" },
+              "hint": { "vi": "Hiện các chữ Zzz mềm mại bay lên khi chú gấu đang ngủ say", "en": "Show gentle floating Zzz letters while the polar bear sleeps" },
               "options": {
                 "vi": ["Ẩn", "Hiện"],
                 "en": ["Hide", "Show"]
