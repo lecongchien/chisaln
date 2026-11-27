@@ -149,19 +149,11 @@ vec3 evalAurora(vec2 pCss, float t) {
   return (colA * bandA * 0.85 + colB * bandB * 0.65) * curtain;
 }
 
-// Crisp, airy, zero-ghosting Studio Ghibli watercolor snowfield sampling (1024px seamless tile)
-// Uses a clean macro patch transition so delicate dry-brush snow wisps stay 100% sharp with zero double-exposure & zero 4K repeat!
+// Spotless, seamless Arches cold-press snow paper sampling (1024px Fourier-periodic tooth, zero blotches or streaks!)
 vec3 samplePaintedSnow(vec2 pCss) {
-  vec2 warp = (texN(pCss + vec2(uSeed * 13.0, -uSeed * 7.0), 0.00068).rg - 0.5) * 42.0;
-  vec2 uv1  = (pCss + warp) / 920.0;
-  // Gentle +10 deg non-commensurate macro patch so washes stay sparse, airy & coherent
-  vec2 rP   = vec2(pCss.x * 0.985 - pCss.y * 0.174, pCss.x * 0.174 + pCss.y * 0.985);
-  vec2 uv2  = (rP - warp * 0.45 + vec2(419.0, -263.0)) / 1360.0;
-  vec3 s1   = texture(uSnowTex, uv1).rgb;
-  vec3 s2   = texture(uSnowTex, uv2).rgb;
-  // Clean open-snow patch selector: avoids 50/50 blurring of delicate dry-brush wisps!
-  float patchW = smoothstep(0.35, 0.65, texN(pCss + vec2(uSeed * 9.0, -uSeed * 5.0), 0.00074).r);
-  return mix(s1, s2, patchW);
+  vec3 s1 = texture(uSnowTex, pCss / 640.0).rgb;
+  vec3 s2 = texture(uSnowTex, (pCss + vec2(271.0, -193.0)) / 1040.0).rgb;
+  return mix(s1, s2, 0.42);
 }
 
 // Gentle wide-wavelength rolling snow-shelf elevation (keeps open warm ivory snow airy & uncluttered!)
