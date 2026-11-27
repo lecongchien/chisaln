@@ -20,7 +20,6 @@ import { createHostBridge } from '../../core/host-bridge.js';
 import { resolveMoonConfig, createMoonSurfaceLoader } from '../../core/moon-phase.js';
 import { ARCTIC_FS } from './arctic-shader.js';
 import { createArcticActorsController, BEAR_NORM, HOLE_NORM } from './arctic-actors.js';
-import { createArcticVideoStage } from './arctic-video.js';
 import { createWindRibbonSystem } from './arctic-wind.js';
 
 const DEFAULTS = {
@@ -96,8 +95,6 @@ function bindArcticUniforms(program) {
     uHole: gl.getUniformLocation(program, 'uHole'),
     uHoleRipple: gl.getUniformLocation(program, 'uHoleRipple'),
     uActorsRect: gl.getUniformLocation(program, 'uActorsRect'),
-    uActorMode: gl.getUniformLocation(program, 'uActorMode'),
-    uVideoBg: gl.getUniformLocation(program, 'uVideoBg'),
     uWindA: gl.getUniformLocation(program, 'uWindA'),
     uWindB: gl.getUniformLocation(program, 'uWindB'),
     uWindC: gl.getUniformLocation(program, 'uWindC')
@@ -168,9 +165,6 @@ let moonPhase = 0.5;
 
 const actors = createArcticActorsController(gl, () => {
   if (paused) renderFrame(simTime, true);
-});
-const videoStage = createArcticVideoStage(gl, () => {
-  if (paused) renderFrame(simTime, false);
 });
 const windRibbons = createWindRibbonSystem();
 const moonSurface = createMoonSurfaceLoader(gl, () => {
@@ -330,11 +324,7 @@ function computeTargetMood() {
 function renderFrame(t, upload2d = true, forceSync = false) {
   if (!ensureProgramReady(forceSync)) return false;
 
-  const useVideo = P.showFriends >= 0.5 && videoStage.isReady();
-  if (useVideo) {
-    videoStage.setSpeed(P.flow);
-    videoStage.uploadIfNeeded();
-  } else if (upload2d) {
+  if (upload2d) {
     actors.renderAndUpload(t, {
       showFriends: P.showFriends,
       showBubbles: P.showBubbles,
@@ -359,7 +349,7 @@ function renderFrame(t, upload2d = true, forceSync = false) {
   gl.uniform1i(U.uNoise, 2);
 
   gl.activeTexture(gl.TEXTURE3);
-  gl.bindTexture(gl.TEXTURE_2D, useVideo ? videoStage.texture : actors.actorsTexture);
+  gl.bindTexture(gl.TEXTURE_2D, actors.actorsTexture);
   gl.uniform1i(U.uActorsTex, 3);
 
   gl.activeTexture(gl.TEXTURE4);
@@ -402,24 +392,9 @@ function renderFrame(t, upload2d = true, forceSync = false) {
   const rip = actors.getRipple();
   const rect = actors.getActorsRectCss();
 
-  // In AI Video mode, the animated aquamarine ice hole lives inside the video clip itself!
-  gl.uniform4f(U.uHole, hole[0], hole[1], (show && !useVideo) ? hole[2] : 0, (show && !useVideo) ? hole[3] : 0);
+  gl.uniform4f(U.uHole, hole[0], hole[1], show ? hole[2] : 0, show ? hole[3] : 0);
   gl.uniform2f(U.uHoleRipple, rip[0], rip[1]);
-  if (useVideo) {
-    const aspect = videoStage.getAspect();
-    const vw = rect[2] * 1.18;
-    const vh = vw / Math.max(0.4, aspect);
-    const vx = rect[0] + (rect[2] - vw) * 0.5;
-    const vy = rect[1] + (rect[3] - vh) * 0.5;
-    gl.uniform4f(U.uActorsRect, vx, vy, show ? vw : 0, show ? vh : 0);
-    gl.uniform1i(U.uActorMode, 1);
-    const bg = videoStage.getBorderBg();
-    gl.uniform4f(U.uVideoBg, bg[0], bg[1], bg[2], videoStage.hasAlpha() ? 1.0 : 0.0);
-  } else {
-    gl.uniform4f(U.uActorsRect, rect[0], rect[1], show ? rect[2] : 0, show ? rect[3] : 0);
-    gl.uniform1i(U.uActorMode, 0);
-    gl.uniform4f(U.uVideoBg, 0.976, 0.961, 0.922, 0.0);
-  }
+  gl.uniform4f(U.uActorsRect, rect[0], rect[1], show ? rect[2] : 0, show ? rect[3] : 0);
 
   gl.uniform4fv(U.uWindA, windRibbons.bufA);
   gl.uniform4fv(U.uWindB, windRibbons.bufB);
@@ -514,7 +489,6 @@ const bridge = createHostBridge({
   },
   onPause(isPaused, iconsSeen) {
     paused = isPaused;
-    videoStage.setPaused(paused);
     if (paused && iconsSeen) {
       curMix = 1.0;
       needsInitialSettle = true;

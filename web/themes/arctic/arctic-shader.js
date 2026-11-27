@@ -46,8 +46,6 @@ uniform float uMoonPhase;    // 0=New, 0.25=First Qtr, 0.5=Full, 0.75=Last Qtr
 uniform vec4 uHole;          // xy = ice hole center CSS px, zw = radii (rx, ry); z <= 0 hides hole
 uniform vec2 uHoleRipple;    // x = age since splash (sec), y = splash strength (0..1)
 uniform vec4 uActorsRect;    // xy = top-left CSS px, zw = size CSS px (z <= 0 disables)
-uniform int uActorMode;      // 0 = GPU sprite rig, 1 = seamless 24-60 FPS AI Video Stage (alpha or snow-feathered!)
-uniform vec4 uVideoBg;       // rgb = border snow paper color of video, a = 1 if VP9 alpha transparent else 0
 
 uniform vec4 uWindA[4];
 uniform vec4 uWindB[4];
@@ -898,77 +896,34 @@ void main() {
     }
   }
 
-  // ---- 5. Hand-Painted Studio Ghibli Polar Bear & Red-Scarf Penguin (Sprites OR Seamless AI Video!) ----
+  // ---- 5. Hand-Painted Studio Ghibli Sleeping Polar Bear & Red-Scarf Penguin ----
   if (uActorsRect.z > 1.0) {
     vec2 aUv = (pCss - uActorsRect.xy) / uActorsRect.zw;
     if (aUv.x >= 0.0 && aUv.x <= 1.0 && aUv.y >= 0.0 && aUv.y <= 1.0) {
-      if (uActorMode == 1) {
-        // Real 24-60 FPS Studio Ghibli AI Video Stage:
-        // Supports BOTH transparent VP9 Alpha WebM (uVideoBg.a > 0.5) AND standard opaque MP4/WebM
-        // shot on matching cream watercolor snow paper (invisibly feathered + optical shadow multiply!).
-        vec4 vSample = texture(uActorsTex, aUv);
-        vec2 cRel = (aUv - 0.5) * 2.0;
-        float edgeWobble = (nMid.r - 0.5) * 0.08 + (nBrush.g - 0.5) * 0.04;
-        float ellDist = length(cRel) + edgeWobble;
-        float radialMask = 1.0 - smoothstep(0.72, 0.98, ellDist);
-        // Stay cleanly on the snow shelf (never bleed over dark glacial water channels!)
-        float stageMask = radialMask * smoothstep(-1.0, 12.0, sSurf);
+      // Soft 5-tap GPU watercolor penumbra shadow directly from shadow FBO (zero CPU blur!)
+      vec2 shOff = vec2(0.0085, 0.0085);
+      float shAlpha = (
+        texture(uActorsShadowTex, aUv).a * 0.36 +
+        texture(uActorsShadowTex, aUv + vec2( shOff.x,  0.0)).a * 0.16 +
+        texture(uActorsShadowTex, aUv + vec2(-shOff.x,  0.0)).a * 0.16 +
+        texture(uActorsShadowTex, aUv + vec2( 0.0,  shOff.y)).a * 0.16 +
+        texture(uActorsShadowTex, aUv + vec2( 0.0, -shOff.y)).a * 0.16
+      );
+      if (shAlpha > 0.004) {
+        vec3 shTint = mix(mix(vec3(0.68, 0.75, 0.89), vec3(0.49, 0.43, 0.64), uSunset),
+                          vec3(0.08, 0.15, 0.27), uNight);
+        col = mix(col, col * mix(vec3(1.0), shTint, 0.54), shAlpha * 0.85);
+      }
 
-        vec3 bgRef = max(uVideoBg.rgb, vec3(0.65));
-        // Auto white-balance opaque AI video to our Arches snow paper white point (zero exposure seam!)
-        vec3 wbGain = uVideoBg.a > 0.5 ? vec3(1.0) : clamp(D_SNOW_HI / bgRef, vec3(0.88), vec3(1.15));
-        vec3 vCol = clamp(vSample.rgb * wbGain, 0.0, 1.0);
-        // Harmonious Day / Alpenglow Sunset / Aurora Moonlit Night watercolor grading
-        vec3 vSunset = vCol * vec3(1.01, 0.87, 0.83) + vec3(0.040, 0.012, 0.028) * (1.0 - vCol.b);
-        vec3 vNight  = vCol * vec3(0.42, 0.54, 0.70) + auroraCol * 0.16;
-        vec3 vGraded = mix(mix(vCol, vSunset, uSunset * 0.86), vNight, uNight * 0.89);
-        vGraded *= 1.0 + paperTooth * 0.024;
-
-        if (uVideoBg.a > 0.5) {
-          // Transparent VP9 Alpha WebM video!
-          float va = vSample.a * stageMask;
-          if (va > 0.004) {
-            col = mix(col, vGraded, va);
-          }
-        } else {
-          // Opaque AI Video on cream snow paper:
-          // Outer snow melts optically into our live Arches watercolor snow paper via luminance ratio,
-          // while Bear, Penguin, Ice Hole, splashes & shadows blend seamlessly at full crisp richness!
-          vec3 paperRatio = clamp(vSample.rgb / bgRef, 0.0, 1.05);
-          vec3 shadowOnPaper = col * paperRatio;
-          // Detect non-snow foreground subject (Bear fur/ink, Penguin, Turquoise Ice Hole, colored accents)
-          float bgDiff = length(vSample.rgb - uVideoBg.rgb);
-          float fgMask = smoothstep(0.055, 0.16, bgDiff);
-          // Blend full graded video inside core subject & optical shadow-multiply on surrounding snow!
-          vec3 videoBlended = mix(shadowOnPaper, vGraded, fgMask);
-          col = mix(col, videoBlended, stageMask);
-        }
-      } else {
-        // Soft 5-tap GPU watercolor penumbra shadow directly from shadow FBO (zero CPU blur!)
-        vec2 shOff = vec2(0.0085, 0.0085);
-        float shAlpha = (
-          texture(uActorsShadowTex, aUv).a * 0.36 +
-          texture(uActorsShadowTex, aUv + vec2( shOff.x,  0.0)).a * 0.16 +
-          texture(uActorsShadowTex, aUv + vec2(-shOff.x,  0.0)).a * 0.16 +
-          texture(uActorsShadowTex, aUv + vec2( 0.0,  shOff.y)).a * 0.16 +
-          texture(uActorsShadowTex, aUv + vec2( 0.0, -shOff.y)).a * 0.16
-        );
-        if (shAlpha > 0.004) {
-          vec3 shTint = mix(mix(vec3(0.68, 0.75, 0.89), vec3(0.49, 0.43, 0.64), uSunset),
-                            vec3(0.08, 0.15, 0.27), uNight);
-          col = mix(col, col * mix(vec3(1.0), shTint, 0.54), shAlpha * 0.85);
-        }
-
-        // Un-premultiply FBO RGBA cleanly for razor-sharp edge compositing with zero dark halo
-        vec4 act = texture(uActorsTex, aUv);
-        if (act.a > 0.004) {
-          vec3 aCol = clamp(act.rgb / act.a, 0.0, 1.0);
-          vec3 sunsetGraded = aCol * vec3(1.01, 0.87, 0.83) + vec3(0.045, 0.015, 0.03) * (1.0 - aCol.b);
-          vec3 nightGraded  = aCol * vec3(0.45, 0.57, 0.73) + auroraCol * 0.15;
-          aCol = mix(mix(aCol, sunsetGraded, uSunset * 0.85), nightGraded, uNight * 0.88);
-          aCol *= 1.0 + paperTooth * 0.028;
-          col = mix(col, aCol, act.a);
-        }
+      // Un-premultiply FBO RGBA cleanly for razor-sharp edge compositing with zero dark halo
+      vec4 act = texture(uActorsTex, aUv);
+      if (act.a > 0.004) {
+        vec3 aCol = clamp(act.rgb / act.a, 0.0, 1.0);
+        vec3 sunsetGraded = aCol * vec3(1.01, 0.87, 0.83) + vec3(0.045, 0.015, 0.03) * (1.0 - aCol.b);
+        vec3 nightGraded  = aCol * vec3(0.45, 0.57, 0.73) + auroraCol * 0.15;
+        aCol = mix(mix(aCol, sunsetGraded, uSunset * 0.85), nightGraded, uNight * 0.88);
+        aCol *= 1.0 + paperTooth * 0.028;
+        col = mix(col, aCol, act.a);
       }
     }
   }

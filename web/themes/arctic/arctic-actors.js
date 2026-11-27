@@ -110,38 +110,13 @@ export function createArcticActorsController(gl, onReady) {
   let pengAtlas = null;
   let pengFlowAtlas = null;
 
-  // 1. Upload 1600x1440 (10x9 = 90-frame) Studio Ghibli Polar Bear WebP Atlas + GPU Flow Map
+  // 1. Upload 1600x1440 (10x9) Studio Ghibli Polar Bear WebP Atlas + GPU Flow Map
+  //    (Uses only peaceful curled-up sleeping, breathing, squint & cozy snuggle frames — zero upright sit!)
   {
     const img = new Image();
     img.decoding = 'async';
     img.onload = () => {
-      const [jc, jr] = BEAR_TILES.bearJolt;
-      const [ac, ar] = BEAR_TILES.bearAwake;
-      const [lc, lr] = BEAR_TILES.bearLookLeft;
-      const prepped = prepareAtlasCanvas(img, BEAR_CELL, BEAR_REF, [
-        {
-          col: jc, row: jr, // bearJolt live alarmed eyes
-          patches: [
-            { x: 337.2, y: 193.9, r: 8.8, fill: '#fcfaf2' },
-            { x: 399.9, y: 176.1, r: 8.2, fill: '#fcfaf2' }
-          ]
-        },
-        {
-          col: ac, row: ar, // bearAwake live darting eyes
-          patches: [
-            { x: 296.1, y: 194.8, r: 9.2, fill: '#fcfaf2' },
-            { x: 359.2, y: 161.3, r: 8.6, fill: '#fcfaf2' }
-          ]
-        },
-        {
-          col: lc, row: lr, // bearLookLeft live darting eyes
-          patches: [
-            { x: 148.4, y: 157.4, r: 8.6, fill: '#fcfaf2' },
-            { x: 209.3, y: 185.4, r: 9.2, fill: '#fcfaf2' }
-          ]
-        }
-      ]);
-      bearAtlas = uploadAtlasTexture(gl, prepped);
+      bearAtlas = uploadAtlasTexture(gl, img);
       onReady?.();
     };
     img.src = 'assets/arctic-bear-atlas.webp?v=ghibli90';
@@ -440,8 +415,8 @@ export function createArcticActorsController(gl, onReady) {
     const pace = clamp(mischief, 0.35, 2.2);
     switch (nextPhase) {
       case 'SLEEPING': {
-        const baseSleep = 5.4 + Math.random() * 3.6;
-        sm.dur = clamp(baseSleep / pace, 2.5, 13.5);
+        const baseSleep = 6.8 + Math.random() * 4.2;
+        sm.dur = clamp(baseSleep / pace, 3.2, 16.0);
         phys.bearBody.reset(0, 0);
         phys.pengBody.reset(0, 0);
         phys.pengEmerge.snap(0);
@@ -458,28 +433,16 @@ export function createArcticActorsController(gl, onReady) {
         phys.pengX.snap(0);
         break;
       }
-      case 'STARTLED':
-        sm.dur = 1.48;
+      case 'COZY_STIR':
+        // Bear stays curled up peacefully sleeping (ear twitch + sleepy sigh + cozy snuggle smile!)
+        // while the playful penguin splashes back down into the aquamarine ice hole.
+        sm.dur = 3.40;
         phys.bearBody.reset(0, 0);
-        phys.bearSquash.impulse(-1.15);
-        phys.bearEar.impulse(10.5);
+        phys.bearSquash.impulse(-0.28);
+        phys.bearEar.impulse(7.2);
+        phys.bearBelly.impulse(14.0);
         phys.pengBody.reset(phys.pengX.x, 62 - phys.pengEmerge.x * 48);
-        phys.pengSquash.impulse(-1.10);
-        break;
-      case 'CONFUSED':
-        sm.dur = 4.90;
-        phys.bearBody.reset(0, 0);
-        phys.pengBody.reset(0, 0);
-        phys.pengEmerge.snap(0);
-        phys.pengX.snap(0);
-        break;
-      case 'YAWNING_BACK':
-        sm.dur = 4.15;
-        phys.bearBody.reset(0, 0);
-        break;
-      case 'FALLING_ASLEEP':
-        sm.dur = 2.05;
-        phys.bearBody.reset(0, 0);
+        phys.pengSquash.impulse(-0.85);
         break;
     }
   }
@@ -648,36 +611,33 @@ export function createArcticActorsController(gl, onReady) {
         }
       }
 
-      if (sm.t >= sm.dur) enterPhase('STARTLED', mischief);
+      if (sm.t >= sm.dur) enterPhase('COZY_STIR', mischief);
 
-    } else if (sm.phase === 'STARTLED') {
+    } else if (sm.phase === 'COZY_STIR') {
+      const u = clamp(sm.t / sm.dur, 0, 1);
       if (!sm.didPop && sm.t >= 0.02) {
         sm.didPop = true;
         if (!sm.didSnowImpact) triggerPopPuff(SNOUT_X + 10, SNOUT_Y + 2, false);
       }
 
-      if (sm.t < 0.15) {
-        bearSquashTarget = -0.10;
-      } else if (!phys.bearLaunched) {
-        phys.bearLaunched = true;
-        phys.bearBody.launch(0, 0, 0, -205);
-        phys.bearSquash.impulse(1.15);
-        phys.bearEar.impulse(-11.0);
-        phys.bearBelly.impulse(42.0);
-        triggerSnowThudRing(BX, BY_GROUND - 12, 0.55);
+      // Soft sleepy sigh puff as the curled-up bear settles deeper into its nap
+      if (u > 0.22 && u < 0.42 && Math.random() < d * 6.5) {
+        sm.breathPuffs.push({
+          x: SNOUT_X + 6 + (Math.random() - 0.5) * 6,
+          y: SNOUT_Y - 4 + (Math.random() - 0.5) * 5,
+          vx: 10 + Math.random() * 10,
+          vy: -14 - Math.random() * 10,
+          r: 4.5 + Math.random() * 3.5,
+          age: 0,
+          life: 1.05 + Math.random() * 0.30
+        });
       }
 
-      const bEv = phys.bearBody.step(d, { floorY: 0 });
-      if (phys.bearBody.airborne) {
-        bearSquashTarget = clamp(-phys.bearBody.vy / 2500, -0.04, 0.07);
-      } else if (bEv.landed) {
-        phys.bearLanded = true;
-        phys.bearSquash.impulse(-bEv.impactVy * 0.0044);
-        phys.bearBelly.impulse(-bEv.impactVy * 0.28);
-        phys.bearEar.impulse(bEv.impactVy * 0.045);
-        triggerSnowThudRing(BX, BY_GROUND - 10, 1.05);
-      }
+      // Gentle cozy curl squash while snuggling (never jumps or sits upright!)
+      bearSquashTarget = -Math.sin(clamp((u - 0.18) / 0.56, 0, 1) * Math.PI) * 0.024;
+      bearLeanTarget = Math.sin(u * Math.PI) * 0.012;
 
+      // Playful penguin splashes happily back into the aquamarine ice hole
       if (sm.t < 0.10) {
         pengEmergeTarget = 1.00;
         pengSquashTarget = -0.10;
@@ -687,8 +647,8 @@ export function createArcticActorsController(gl, onReady) {
         const startX = phys.pengX.x;
         const startY = 62 - phys.pengEmerge.x * 48;
         const vxToHole = -startX * 1.95;
-        phys.pengBody.launch(startX, startY, vxToHole, -315, 0, 0);
-        phys.pengSquash.impulse(0.85);
+        phys.pengBody.launch(startX, startY, vxToHole, -295, 0, 0);
+        phys.pengSquash.impulse(0.82);
       }
 
       if (phys.pengLaunched) {
@@ -701,120 +661,30 @@ export function createArcticActorsController(gl, onReady) {
         if (pEv.crossedWaterDown && !sm.didDiveSplash) {
           sm.didDiveSplash = true;
           phys.pengSubmerged = true;
-          const str = clamp(pEv.impactVy / 310, 0.75, 1.35);
-          triggerSplash(str, 18, 1.24);
+          const str = clamp(pEv.impactVy / 310, 0.72, 1.25);
+          triggerSplash(str, 16, 1.16);
         }
         if (phys.pengBody.y > 54 && !sm.didDiveSplash2) {
           sm.didDiveSplash2 = true;
-          triggerSplash(0.82, 13, 0.94);
+          triggerSplash(0.76, 11, 0.88);
         }
       }
 
-      if (sm.t >= sm.dur) enterPhase('CONFUSED', mischief);
-
-    } else if (sm.phase === 'CONFUSED') {
-      const u = clamp(sm.t / sm.dur, 0, 1);
-
-      sm.bubbleTimer -= d;
-      if (sm.bubbleTimer <= 0 && sm.t < 3.4) {
-        sm.bubbleTimer = 0.42 + Math.random() * 0.28;
-        sm.airBubbles.push({
-          x: HX + (Math.random() - 0.5) * HRX * 0.65,
-          y: HY + (Math.random() - 0.5) * HRY * 0.42,
-          r: 2.8 + Math.random() * 3.4,
-          age: 0,
-          life: 0.95 + Math.random() * 0.38
-        });
-      }
-
-      const curBlend = mouse.active ? (1 - sstep(1.2, 2.8, mouse.idleSec)) * 0.35 : 0;
-      const curLookX = (mouse.nx - 0.5) * 2.0;
-      const curLookY = (mouse.ny - 0.5) * 1.4;
-
-      if (u < 0.24) {
-        bearLookTargetX = lerp(0.86, curLookX, curBlend);
-        bearLookTargetY = lerp(0.22, curLookY, curBlend);
-        bearLeanTarget = 0.025;
-      } else if (u < 0.36) {
-        const turnU = (u - 0.24) / 0.12;
-        bearTurnSxTarget = 1.0 - Math.sin(turnU * Math.PI) * 0.10;
-        bearLookTargetX = 0;
-        bearLookTargetY = 0;
-        bearLeanTarget = -0.035;
-      } else if (u < 0.58) {
-        bearLookTargetX = lerp(-0.86, curLookX, curBlend);
-        bearLookTargetY = lerp(-0.08, curLookY, curBlend);
-        bearLeanTarget = -0.03;
-      } else if (u < 0.71) {
-        const turnU = (u - 0.58) / 0.13;
-        bearTurnSxTarget = 1.0 - Math.sin(turnU * Math.PI) * 0.10;
-        bearLookTargetX = 0;
-        bearLookTargetY = 0;
-        bearLeanTarget = 0.035;
-      } else if (u < 0.80) {
-        bearLookTargetX = lerp(0.92, curLookX, curBlend);
-        bearLookTargetY = lerp(0.56, curLookY, curBlend);
-        bearLeanTarget = 0.04;
-      } else {
-        const su = (u - 0.80) / 0.20;
-        const env = Math.sin(su * Math.PI);
-        bearLeanTarget = Math.sin(su * Math.PI * 5.0) * 0.05 * env + sstep(0.68, 1.0, su) * 0.065;
-        bearSquashTarget = -sstep(0.68, 1.0, su) * 0.04;
-        const stepIdx = Math.floor(su * 5);
-        if (stepIdx !== sm.didShakeImpulse) {
-          sm.didShakeImpulse = stepIdx;
-          const dir = stepIdx % 2 === 0 ? -1 : 1;
-          phys.bearEar.impulse(-dir * 10.0);
-          phys.bearBelly.impulse(dir * 20.0);
-        }
-      }
-
-      if (u > 0.34 && u < 0.57) {
-        const su = (u - 0.34) / 0.23;
-        const bob = Math.sin(phys.simT * 4.5) * 0.025;
-        pengEmergeTarget = Math.sin(su * Math.PI) * 0.94 + bob;
-        pengTiltTarget = -0.045 * Math.sin(su * Math.PI);
-      } else {
-        pengEmergeTarget = 0;
-        if (!sm.didSneakSplash && u >= 0.57) {
-          sm.didSneakSplash = true;
-          triggerSplash(0.46, 6, 0.55);
-        }
-      }
-
-      if (sm.t >= sm.dur) enterPhase('YAWNING_BACK', mischief);
-
-    } else if (sm.phase === 'YAWNING_BACK') {
-      const u = clamp(sm.t / sm.dur, 0, 1);
-      if (u > 0.28 && u < 0.54) {
-        bearSquashTarget = Math.sin(((u - 0.28) / 0.26) * Math.PI) * 0.05;
-        if (Math.random() < d * 10.0) {
-          sm.breathPuffs.push({
-            x: YAWN_MOUTH_X + (Math.random() - 0.5) * 9,
-            y: YAWN_MOUTH_Y + (Math.random() - 0.5) * 7,
-            vx: 16 + Math.random() * 14,
-            vy: -24 - Math.random() * 14,
-            r: 6 + Math.random() * 5,
+      // Gentle underwater air bubbles after penguin dives back in
+      if (phys.pengSubmerged && u > 0.38 && u < 0.88) {
+        sm.bubbleTimer -= d;
+        if (sm.bubbleTimer <= 0) {
+          sm.bubbleTimer = 0.44 + Math.random() * 0.28;
+          sm.airBubbles.push({
+            x: HX + (Math.random() - 0.5) * HRX * 0.62,
+            y: HY + (Math.random() - 0.5) * HRY * 0.40,
+            r: 2.6 + Math.random() * 3.0,
             age: 0,
-            life: 1.15 + Math.random() * 0.35
+            life: 0.90 + Math.random() * 0.36
           });
         }
-      } else if (u > 0.68 && u < 0.88) {
-        const stu = (u - 0.68) / 0.20;
-        bearLeanTarget = Math.sin(stu * Math.PI) * 0.032;
-        bearSquashTarget = -Math.sin(stu * Math.PI) * 0.038;
-      } else if (u >= 0.93 && !sm.didFlopDust) {
-        sm.didFlopDust = true;
-        phys.bearSquash.impulse(-0.92);
-        phys.bearBelly.impulse(-42.0);
-        phys.bearEar.impulse(6.8);
-        triggerSnowThudRing(BX + 14, BY_GROUND - 12, 0.82);
       }
-      if (sm.t >= sm.dur) enterPhase('FALLING_ASLEEP', mischief);
 
-    } else if (sm.phase === 'FALLING_ASLEEP') {
-      const u = clamp(sm.t / sm.dur, 0, 1);
-      bearSquashTarget = -Math.sin(u * Math.PI) * 0.025;
       if (sm.t >= sm.dur) enterPhase('SLEEPING', mischief);
     }
 
@@ -834,7 +704,7 @@ export function createArcticActorsController(gl, onReady) {
     phys.pengTilt.step(d, pengTiltTarget + velTilt);
 
     let pVx = 0, pVy = 0;
-    if (sm.phase === 'STARTLED' && phys.pengLaunched) {
+    if (sm.phase === 'COZY_STIR' && phys.pengLaunched) {
       pVx = phys.pengBody.vx;
       pVy = phys.pengBody.vy;
     } else {
@@ -899,13 +769,13 @@ export function createArcticActorsController(gl, onReady) {
     return (u, v, out) => {
       const anchor = clamp((446 - v) / 150, 0, 1);
       const wBreath = radialWeight(u, v, 212, 252, 200, 155) * anchor;
-      out[0] -= breathSigned * 4.5 * wBreath;
-      out[1] -= (breathSigned * 12.0 - bellyJiggle * 0.35) * wBreath;
+      out[0] -= breathSigned * 3.2 * wBreath;
+      out[1] -= (breathSigned * 8.2 - bellyJiggle * 0.25) * wBreath;
       const wHead = radialWeight(u, v, 392, 335, 118, 102) * anchor;
-      out[0] += recoilX * 0.72 * wHead;
-      out[1] -= breathSigned * 3.2 * wHead;
+      out[0] += recoilX * 0.45 * wHead;
+      out[1] -= breathSigned * 2.2 * wHead;
       if (Math.abs(earImpulse) > 0.02) {
-        const e = clamp(earImpulse * 0.04, -0.42, 0.42);
+        const e = clamp(earImpulse * 0.036, -0.34, 0.34);
         applyWeightedRotation(out, 326, 265,  e, radialWeight(u, v, 324, 248, 42, 40));
         applyWeightedRotation(out, 456, 280, -e * 0.9, radialWeight(u, v, 460, 266, 38, 38));
       }
@@ -1185,142 +1055,34 @@ export function createArcticActorsController(gl, onReady) {
     return makeBearSoftBodyDeform(breathSigned, belly, ear, 0);
   }
 
-  // Continuous 60 FPS keyframe stop tables across ALL 90 Studio Ghibli Bear poses!
-  const BEAR_STARTLED_STOPS = [
-    [0.00, 'bearLiftStart'],
-    [0.05, 'bearLiftHead'],
-    [0.10, 'bearLiftHeadToMid'],
-    [0.15, 'bearLiftMid'],
-    [0.20, 'bearLiftToSpring'],
-    [0.25, 'bearStartleSpring'],
-    [0.31, 'bearPushRise'],
-    [0.37, 'bearRiseToJoltPush'],
-    [0.43, 'bearJoltPush'],
-    [0.50, 'bearJolt'],
-    [0.62, 'bearJolt'],
-    [0.68, 'bearJoltRecoil'],
-    [0.74, 'bearRecoilToHaunch'],
-    [0.80, 'bearHaunchDrop'],
-    [0.86, 'bearHaunchToRump'],
-    [0.92, 'bearRumpSettle'],
-    [0.98, 'bearJoltSit'],
-    [1.03, 'bearSitToBalance'],
-    [1.08, 'bearSitBalance'],
-    [1.13, 'bearBalanceToSitUp'],
-    [1.18, 'bearSitUp'],
-    [1.24, 'bearPawLiftLow'],
-    [1.29, 'bearPawLiftHigh'],
-    [1.34, 'bearAwakeOpen'],
-    [1.40, 'bearAwake']
-  ];
-
-  const BEAR_CONFUSED_STOPS = [
-    [0.000, 'bearAwake'],
-    [0.070, 'bearAwake'],
-    [0.105, 'bearScratchUp'],
-    [0.140, 'bearScratchMid'],
-    [0.175, 'bearScratchLow'],
-    [0.205, 'bearTurnRight34'],
-    [0.232, 'bearPawDropMid'],
-    [0.258, 'bearPawDropToCenterR'],
-    [0.282, 'bearCenterEaseR'],
-    [0.308, 'bearFrontLook'],
-    [0.332, 'bearCenterEaseL'],
-    [0.356, 'bearCenterToLeftLift'],
-    [0.380, 'bearLeftPawLift'],
-    [0.405, 'bearTurnLeft34'],
-    [0.430, 'bearLookLeft'],
-    [0.485, 'bearLookLeft'],
-    [0.520, 'bearLookLeftScratchUp'],
-    [0.560, 'bearLookLeftSusp'],
-    [0.588, 'bearLeftPawDrop'],
-    [0.614, 'bearCenterToLeftLift'],
-    [0.638, 'bearCenterEaseL'],
-    [0.664, 'bearFrontLook'],
-    [0.688, 'bearCenterEaseR'],
-    [0.712, 'bearPawDropToCenterR'],
-    [0.734, 'bearPawLiftLow'],
-    [0.754, 'bearPawLiftHigh'],
-    [0.774, 'bearAwake'],
-    [0.796, 'bearAwake'],
-    [0.816, 'bearPawDropMid'],
-    [0.834, 'bearDropToShakePrep'],
-    [0.852, 'bearShakePrep'],
-    [0.870, 'bearPrepToShakeL'],
-    [0.888, 'bearShakeLeft'],
-    [0.906, 'bearShakeWhipL'],
-    [0.924, 'bearShake'],
-    [0.942, 'bearShakeWhipR'],
-    [0.960, 'bearShakeRight'],
-    [0.978, 'bearShakeFur'],
-    [1.000, 'bearShakeSettle']
-  ];
-
-  const BEAR_YAWN_STOPS = [
-    [0.000, 'bearShakeSettle'],
-    [0.036, 'bearUnseatTurn'],
-    [0.072, 'bearUnseatMid1'],
-    [0.108, 'bearUnseatMid2'],
-    [0.145, 'bearLeanForward'],
-    [0.180, 'bearLeanToPlant'],
-    [0.214, 'bearPlantCrouch'],
-    [0.248, 'bearPawsPlant'],
-    [0.282, 'bearYawnStart'],
-    [0.320, 'bearYawnOpen1'],
-    [0.362, 'bearYawnMid'],
-    [0.415, 'bearYawn'],
-    [0.468, 'bearYawnPeakHold'],
-    [0.525, 'bearYawnPeakHold'],
-    [0.578, 'bearYawnSigh'],
-    [0.620, 'bearYawnClose'],
-    [0.660, 'bearStretchReach'],
-    [0.700, 'bearStretchStart'],
-    [0.745, 'bearStretch'],
-    [0.795, 'bearStretchDeep'],
-    [0.835, 'bearStretchDeep'],
-    [0.878, 'bearStretchRecoil'],
-    [0.918, 'bearStretchToCurl'],
-    [0.958, 'bearCurlStart'],
-    [1.000, 'bearDropBelly']
-  ];
-
-  const BEAR_SLEEP_BACK_STOPS = [
-    [0.00, 'bearDropBelly'],
-    [0.09, 'bearBellyToTuck'],
-    [0.18, 'bearTuckChin'],
-    [0.28, 'bearCurlIn'],
-    [0.37, 'bearCurlInToSide'],
-    [0.47, 'bearCurlSide'],
-    [0.58, 'bearDrowsy'],
-    [0.68, 'bearRestHead'],
-    [0.78, 'bearDrowsySmile'],
-    [0.87, 'bearSnuggle'],
-    [0.94, 'bearSettleLoop'],
+  // Peaceful curled-up snuggle reaction — 100% silhouette-locked & baked optical-flow pairs!
+  const BEAR_COZY_STIR_STOPS = [
+    [0.00, 'bearSleepMid'],
+    [0.14, 'bearPeekSquint'],
+    [0.30, 'bearSleepMid'],
+    [0.42, 'bearSettleLoop'],
+    [0.54, 'bearSnuggle'],
+    [0.67, 'bearDrowsySmile'],
+    [0.80, 'bearSnuggle'],
+    [0.91, 'bearSettleLoop'],
     [1.00, 'bearSleepMid']
   ];
 
   function resolveBearFrame(simT) {
-    const breathObj = sampleMammalianBreath(simT, 3.65);
-    const breathLag = sampleMammalianBreath(simT - 0.22, 3.65);
+    const breathObj = sampleMammalianBreath(simT, 4.35);
+    const breathLag = sampleMammalianBreath(simT - 0.24, 4.35);
     const breathSigned = breathObj.signed;
 
     let keyA = 'bearSleepMid';
     let keyB = 'bearSleepMid';
     let morphT = 0;
     let bubbleScale = 0;
-    let bangAlpha = 0, bangScale = 0;
-    let questAlpha = 0;
-    let scratchWave = 0;
-    let shakeWave = 0;
-    let yawnPeak = 0;
-    let stretchPeak = 0;
-    let blink = 0;
 
     if (sm.phase === 'SLEEPING') {
-      // Continuous 60 FPS breathing optical-flow wave: bearSleepDeep <-> bearSleepMid <-> bearSleepInhale
+      // Silky 60 FPS silhouette-locked breathing wave: bearSettleLoop <-> bearSleepMid <-> bearSleepInhale
       const lvl = clamp(breathObj.level, 0, 1);
       if (lvl < 0.5) {
-        keyA = 'bearSleepDeep';
+        keyA = 'bearSettleLoop';
         keyB = 'bearSleepMid';
         morphT = lvl * 2.0;
       } else {
@@ -1328,76 +1090,29 @@ export function createArcticActorsController(gl, onReady) {
         keyB = 'bearSleepInhale';
         morphT = (lvl - 0.5) * 2.0;
       }
-      bubbleScale = 0.60 + 0.40 * breathLag.level;
+      bubbleScale = 0.58 + 0.42 * breathLag.level;
 
     } else if (sm.phase === 'PEEKING') {
       const u = clamp(sm.t / sm.dur, 0, 1);
-      if (u < 0.66) {
-        const lvl = clamp(breathObj.level, 0, 1);
-        if (lvl < 0.5) {
-          keyA = 'bearSleepDeep'; keyB = 'bearSleepMid'; morphT = lvl * 2.0;
-        } else {
-          keyA = 'bearSleepMid'; keyB = 'bearSleepInhale'; morphT = (lvl - 0.5) * 2.0;
-        }
-        bubbleScale = sm.didSnowImpact ? 0 : (0.68 + 0.32 * breathLag.level);
+      const lvl = clamp(breathObj.level, 0, 1);
+      if (lvl < 0.5) {
+        keyA = 'bearSettleLoop'; keyB = 'bearSleepMid'; morphT = lvl * 2.0;
       } else {
-        const c = sampleFlowChain(u, [
-          [0.66, 'bearSleepMid'],
-          [0.75, 'bearPeekSquint'],
-          [0.86, 'bearPeekEye'],
-          [1.00, 'bearLiftStart']
-        ]);
-        keyA = c.keyA; keyB = c.keyB; morphT = c.morphT;
-        bubbleScale = sm.didSnowImpact ? 0 : (1 - sstep(0.66, 0.88, u)) * 0.45;
+        keyA = 'bearSleepMid'; keyB = 'bearSleepInhale'; morphT = (lvl - 0.5) * 2.0;
       }
+      bubbleScale = sm.didSnowImpact ? 0 : (0.62 + 0.36 * breathLag.level) * (1 - sstep(0.92, 1.0, u) * 0.25);
 
-    } else if (sm.phase === 'STARTLED') {
-      const t = sm.t;
-      const u = clamp(t / sm.dur, 0, 1);
-      bangScale = easeOutBack(clamp(u / 0.18, 0, 1));
-      bangAlpha = 1.0 - sstep(0.68, 0.95, u);
-      const c = sampleFlowChain(t, BEAR_STARTLED_STOPS);
-      keyA = c.keyA; keyB = c.keyB; morphT = c.morphT;
-
-    } else if (sm.phase === 'CONFUSED') {
+    } else if (sm.phase === 'COZY_STIR') {
       const u = clamp(sm.t / sm.dur, 0, 1);
-      questAlpha = sstep(0.04, 0.12, u) * (1 - sstep(0.74, 0.82, u));
-      if (u > 0.13 && u < 0.19) blink = Math.sin(((u - 0.13) / 0.06) * Math.PI);
-      else if (u > 0.44 && u < 0.50) blink = Math.sin(((u - 0.44) / 0.06) * Math.PI);
-
-      const c = sampleFlowChain(u, BEAR_CONFUSED_STOPS);
+      const c = sampleFlowChain(u, BEAR_COZY_STIR_STOPS);
       keyA = c.keyA; keyB = c.keyB; morphT = c.morphT;
-
-      if (u < 0.16) scratchWave = Math.sin(simT * 10.5) * 0.62;
-      else if (u > 0.42 && u < 0.55) scratchWave = Math.sin(simT * 10.5) * 0.66;
-      else if (u > 0.76 && u < 0.81) scratchWave = Math.sin(simT * 9.0) * 0.42;
-      if (u > 0.85) {
-        const su = clamp((u - 0.85) / 0.15, 0, 1);
-        shakeWave = Math.sin(su * Math.PI * 5.0) * Math.sin(su * Math.PI);
-      }
-
-    } else if (sm.phase === 'YAWNING_BACK') {
-      const u = clamp(sm.t / sm.dur, 0, 1);
-      const c = sampleFlowChain(u, BEAR_YAWN_STOPS);
-      keyA = c.keyA; keyB = c.keyB; morphT = c.morphT;
-      if (u > 0.30 && u < 0.60) {
-        yawnPeak = Math.sin(((u - 0.30) / 0.30) * Math.PI);
-      }
-      if (u > 0.65 && u < 0.90) {
-        stretchPeak = Math.sin(((u - 0.65) / 0.25) * Math.PI);
-      }
-
-    } else if (sm.phase === 'FALLING_ASLEEP') {
-      const u = clamp(sm.t / sm.dur, 0, 1);
-      bubbleScale = sstep(0.65, 1.0, u) * 0.62;
-      const c = sampleFlowChain(u, BEAR_SLEEP_BACK_STOPS);
-      keyA = c.keyA; keyB = c.keyB; morphT = c.morphT;
+      bubbleScale = sstep(0.84, 1.0, u) * (0.58 + 0.30 * breathLag.level);
     }
 
     const { sx: volSx, sy } = volumeScale(phys.bearSquash.x);
     const sx = volSx * phys.bearTurnSx.x;
     const airY = phys.bearBody.y;
-    const drawX = BX + phys.bearRecoilX.x * 0.35;
+    const drawX = BX + phys.bearRecoilX.x * 0.25;
     const drawPivY = BY_GROUND + airY;
     const rot = phys.bearLean.x;
 
@@ -1405,8 +1120,8 @@ export function createArcticActorsController(gl, onReady) {
       keyA, keyB, morphT,
       currKey: morphT < 0.5 ? keyA : keyB,
       drawX, drawPivY, drawCenterY: BY_CENTER + airY, airY, rot, sx, sy,
-      breathSigned, scratchWave, shakeWave, yawnPeak, stretchPeak, blink,
-      bubbleScale, bangAlpha, bangScale, questAlpha
+      breathSigned, scratchWave: 0, shakeWave: 0, yawnPeak: 0, stretchPeak: 0, blink: 0,
+      bubbleScale, bangAlpha: 0, bangScale: 0, questAlpha: 0
     };
   }
 
@@ -1514,7 +1229,7 @@ export function createArcticActorsController(gl, onReady) {
         armReach = sstep(0.36, 0.64, u);
       }
 
-    } else if (sm.phase === 'STARTLED') {
+    } else if (sm.phase === 'COZY_STIR') {
       const t = sm.t;
       if (t < 0.10) {
         visible = true;
@@ -1528,7 +1243,7 @@ export function createArcticActorsController(gl, onReady) {
         if (phys.pengBody.y < 90) {
           visible = true;
           if (!phys.pengSubmerged && vy < -85) {
-            const pitchT = clamp((vy + 315) / 230, 0, 1);
+            const pitchT = clamp((vy + 295) / 210, 0, 1);
             keyA = 'pengPanic'; keyB = 'pengTumble'; morphT = pitchT * 0.6;
             rot = lerp(-0.08, -0.52, pitchT);
             squashAmt = clamp(-vy / 2400, -0.04, 0.09);
@@ -1560,25 +1275,6 @@ export function createArcticActorsController(gl, onReady) {
           visible = false;
         }
       }
-
-    } else if (sm.phase === 'CONFUSED') {
-      const u = clamp(sm.t / sm.dur, 0, 1);
-      if (u > 0.34 && u < 0.57 && phys.pengEmerge.x > 0.08) {
-        visible = true;
-        const su = (u - 0.34) / 0.23;
-        const c = sampleFlowChain(su, [
-          [0.00, 'pengCrownPeek'],
-          [0.14, 'pengSneakA'],
-          [0.28, 'pengSneakB'],
-          [0.42, 'pengSneak'],
-          [0.54, 'pengGiggle'],
-          [0.66, 'pengSneak'],
-          [0.78, 'pengSneakB'],
-          [0.90, 'pengSneakA'],
-          [1.00, 'pengCrownPeek']
-        ]);
-        keyA = c.keyA; keyB = c.keyB; morphT = c.morphT;
-      }
     }
 
     if (!visible) {
@@ -1586,7 +1282,7 @@ export function createArcticActorsController(gl, onReady) {
     }
 
     const { sx, sy } = volumeScale(squashAmt);
-    const inWaterSurface = (sm.phase === 'PEEKING' || sm.phase === 'CONFUSED') && phys.pengEmerge.x > 0.14;
+    const inWaterSurface = (sm.phase === 'PEEKING') && phys.pengEmerge.x > 0.14;
     return {
       visible: true,
       keyA, keyB, morphT,
@@ -1620,7 +1316,7 @@ export function createArcticActorsController(gl, onReady) {
 
   function drawPengShadowGpu(pf) {
     if (!pengAtlas || !pf || !pf.visible) return;
-    if (sm.phase === 'STARTLED' || phys.pengEmerge.x <= 0.42) return;
+    if (sm.phase === 'COZY_STIR' || phys.pengEmerge.x <= 0.42) return;
     const shAlpha = clamp((phys.pengEmerge.x - 0.42) * 0.72, 0, 0.54);
     drawFlowActor(
       pengAtlas, pengFlowAtlas, PENG_TILES, PENG_FLOW_MAP, PENG_ATLAS_META,
@@ -1877,8 +1573,8 @@ export function createArcticActorsController(gl, onReady) {
     gpuRig.beginColor();
 
     if (pf.visible && pengAtlas) {
-      const inStartled = (sm.phase === 'STARTLED');
-      const aerial = isAerialPengKey(pf.currKey) || inStartled;
+      const inDive = (sm.phase === 'COZY_STIR');
+      const aerial = isAerialPengKey(pf.currKey) || inDive;
       const pivotY = aerial ? 0.5 : PENG_PIVOT_Y;
       const drawPy = aerial ? pf.py : (pf.py + PENG_PIV_OFF);
       const pDef = getPengDeformForKey(pf.currKey, simT, pf.windAmp, pf.waveAng, pf.armReach);
