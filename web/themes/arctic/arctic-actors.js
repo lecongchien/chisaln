@@ -110,8 +110,7 @@ export function createArcticActorsController(gl, onReady) {
   let pengAtlas = null;
   let pengFlowAtlas = null;
 
-  // 1. Upload 1600x1440 (10x9) Studio Ghibli Polar Bear WebP Atlas + GPU Flow Map
-  //    (Uses only peaceful curled-up sleeping, breathing, squint & cozy snuggle frames — zero upright sit!)
+  // 1. Upload Ultra-HD 1536x1024 (3x2 @ 512x512) Hand-Painted Studio Ghibli Polar Bear Atlas + 128px GPU Flow Map
   {
     const img = new Image();
     img.decoding = 'async';
@@ -119,7 +118,7 @@ export function createArcticActorsController(gl, onReady) {
       bearAtlas = uploadAtlasTexture(gl, img);
       onReady?.();
     };
-    img.src = 'assets/arctic-bear-atlas.webp?v=ghibli90';
+    img.src = 'assets/arctic-bear-atlas.webp?v=ghibli512';
   }
   {
     const img = new Image();
@@ -128,7 +127,7 @@ export function createArcticActorsController(gl, onReady) {
       bearFlowAtlas = uploadFlowTexture(gl, img);
       onReady?.();
     };
-    img.src = 'assets/arctic-bear-flow.png?v=ghibli90';
+    img.src = 'assets/arctic-bear-flow.png?v=ghibli512';
   }
 
   // 2. Upload 1008x576 Studio Ghibli Penguin WebP Atlas + GPU Flow Map
@@ -230,11 +229,11 @@ export function createArcticActorsController(gl, onReady) {
   const PENG_W = 116;
   const PENG_PIV_OFF = (PENG_PIVOT_Y - 0.5) * PENG_W;
 
-  // Calibrated anatomical landmarks in TEX_SIZE space
-  const SNOUT_X = BX + ((415.0 / BEAR_REF) - 0.5) * BEAR_W;
-  const SNOUT_Y = BY_CENTER + ((369.8 / BEAR_REF) - 0.5) * BEAR_W;
-  const YAWN_MOUTH_X = BX + ((391.6 / BEAR_REF) - 0.5) * BEAR_W;
-  const YAWN_MOUTH_Y = BY_CENTER + ((249.8 / BEAR_REF) - 0.5) * BEAR_W;
+  // Calibrated anatomical landmarks in TEX_SIZE space (auto-detected nose tip on 512x512 hero Ghibli bear!)
+  const SNOUT_X = BX + ((457.0 / BEAR_REF) - 0.5) * BEAR_W;
+  const SNOUT_Y = BY_CENTER + ((221.2 / BEAR_REF) - 0.5) * BEAR_W;
+  const YAWN_MOUTH_X = SNOUT_X;
+  const YAWN_MOUTH_Y = SNOUT_Y;
 
   const mouse = { nx: 0.5, ny: 0.5, active: false, idleSec: 99 };
 
@@ -767,17 +766,20 @@ export function createArcticActorsController(gl, onReady) {
 
   function makeBearSleepDeform(breathSigned, earImpulse, bellyJiggle, recoilX) {
     return (u, v, out) => {
-      const anchor = clamp((446 - v) / 150, 0, 1);
-      const wBreath = radialWeight(u, v, 212, 252, 200, 155) * anchor;
-      out[0] -= breathSigned * 3.2 * wBreath;
-      out[1] -= (breathSigned * 8.2 - bellyJiggle * 0.25) * wBreath;
-      const wHead = radialWeight(u, v, 392, 335, 118, 102) * anchor;
-      out[0] += recoilX * 0.45 * wHead;
-      out[1] -= breathSigned * 2.2 * wHead;
+      const anchor = clamp((462 - v) / 165, 0, 1);
+      // Rounded upper back & ribcage gentle breathing expansion on 512x512 hero Ghibli bear
+      const wBreath = radialWeight(u, v, 210, 215, 185, 150) * anchor;
+      out[0] -= breathSigned * 3.0 * wBreath;
+      out[1] -= (breathSigned * 7.5 - bellyJiggle * 0.22) * wBreath;
+      // Head & snout subtle bob + recoil
+      const wHead = radialWeight(u, v, 405, 190, 96, 86) * anchor;
+      out[0] += recoilX * 0.34 * wHead;
+      out[1] -= breathSigned * 1.8 * wHead;
+      // Calibrated front & back ears on 512x512 hero bear for soft tickled ear-twitch!
       if (Math.abs(earImpulse) > 0.02) {
-        const e = clamp(earImpulse * 0.036, -0.34, 0.34);
-        applyWeightedRotation(out, 326, 265,  e, radialWeight(u, v, 324, 248, 42, 40));
-        applyWeightedRotation(out, 456, 280, -e * 0.9, radialWeight(u, v, 460, 266, 38, 38));
+        const e = clamp(earImpulse * 0.036, -0.32, 0.32);
+        applyWeightedRotation(out, 384, 114,  e, radialWeight(u, v, 384, 102, 38, 36));
+        applyWeightedRotation(out, 428, 120, -e * 0.85, radialWeight(u, v, 430, 110, 30, 30));
       }
     };
   }
@@ -1055,16 +1057,15 @@ export function createArcticActorsController(gl, onReady) {
     return makeBearSoftBodyDeform(breathSigned, belly, ear, 0);
   }
 
-  // Peaceful curled-up snuggle reaction — 100% silhouette-locked & baked optical-flow pairs!
+  // Peaceful curled-up snuggle reaction — 100% backed by 128px baked optical-flow pairs!
   const BEAR_COZY_STIR_STOPS = [
     [0.00, 'bearSleepMid'],
     [0.14, 'bearPeekSquint'],
-    [0.30, 'bearSleepMid'],
-    [0.42, 'bearSettleLoop'],
-    [0.54, 'bearSnuggle'],
-    [0.67, 'bearDrowsySmile'],
-    [0.80, 'bearSnuggle'],
-    [0.91, 'bearSettleLoop'],
+    [0.28, 'bearSleepMid'],
+    [0.44, 'bearDrowsySmile'],
+    [0.58, 'bearDrowsySmile'],
+    [0.74, 'bearSnuggle'],
+    [0.88, 'bearSettleLoop'],
     [1.00, 'bearSleepMid']
   ];
 
