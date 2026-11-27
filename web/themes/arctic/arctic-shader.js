@@ -149,11 +149,21 @@ vec3 evalAurora(vec2 pCss, float t) {
   return (colA * bandA * 0.85 + colB * bandB * 0.65) * curtain;
 }
 
-// Spotless, seamless Arches cold-press snow paper sampling (1024px Fourier-periodic tooth, zero blotches or streaks!)
+// 1:1 aspect-preserving viewport-cover sampling of our exact 1920x1080 thumb-arctic snowfield painting
+// (Zero tiling, zero seams, zero double-exposure blur — preserves every delicate Ghibli watercolor wash!)
 vec3 samplePaintedSnow(vec2 pCss) {
-  vec3 s1 = texture(uSnowTex, pCss / 640.0).rgb;
-  vec3 s2 = texture(uSnowTex, (pCss + vec2(271.0, -193.0)) / 1040.0).rgb;
-  return mix(s1, s2, 0.42);
+  vec2 viewCss = uRes / max(0.5, uDpr);
+  float texAsp = 16.0 / 9.0;
+  float scrAsp = viewCss.x / max(1.0, viewCss.y);
+  vec2 uv = pCss / max(vec2(1.0), viewCss);
+  if (scrAsp > texAsp) {
+    float sc = texAsp / scrAsp;
+    uv.y = (uv.y - 0.5) * sc + 0.5;
+  } else {
+    float sc = scrAsp / texAsp;
+    uv.x = (uv.x - 0.5) * sc + 0.5;
+  }
+  return texture(uSnowTex, clamp(uv, 0.002, 0.998)).rgb;
 }
 
 // Gentle wide-wavelength rolling snow-shelf elevation (keeps open warm ivory snow airy & uncluttered!)
@@ -749,19 +759,17 @@ void main() {
       bearNestBowl = (1.0 - smoothstep(0.32, 0.92, dBear));
     }
 
-    // 1A. Real 1024px seamless Studio Ghibli watercolor snowfield (warm ivory + sparse periwinkle washes & wisps)
+    // 1A. Exact 1:1 full-frame thumb-arctic Studio Ghibli watercolor snowfield (zero tiling, zero blur!)
     vec3 paintedSnow = samplePaintedSnow(pCss);
-    // Keep the cozy clearing right under the bear extra clean warm ivory so no stray drift stripe cuts across it
-    paintedSnow = mix(D_SNOW_HI, paintedSnow, mix(0.38, 1.0, bearCalm));
     snowCol = gradeSnowArt(paintedSnow, auroraCol);
 
-    // 1B. Whisper-subtle wide snow-hill sunlight & pale periwinkle valley bloom (keeps 75-80% open luminous cream!)
+    // 1B. Ultra-subtle wide snow-swell light breathing (preserves 100% pure thumb-arctic watercolor fidelity!)
     vec2 snowRel = evalSnowRelief(pCss);
     float reliefLit = snowRel.x * mix(0.20, 1.0, bearCalm);
-    float crestBoost  = smoothstep(0.16, 0.88, reliefLit);
-    float hollowShade = smoothstep(0.22, 0.92, -reliefLit);
-    snowCol = mix(snowCol, snowHi,   crestBoost  * mix(0.14, 0.16, uNight));
-    snowCol = mix(snowCol, snowWash, hollowShade * mix(0.11, 0.16, uNight));
+    float crestBoost  = smoothstep(0.20, 0.90, reliefLit);
+    float hollowShade = smoothstep(0.24, 0.92, -reliefLit);
+    snowCol = mix(snowCol, snowHi,   crestBoost  * mix(0.04, 0.08, uNight));
+    snowCol = mix(snowCol, snowWash, hollowShade * mix(0.03, 0.07, uNight));
 
     // 1C. Soft poetic lavender-periwinkle snow-nest cushion cradling the sleeping Polar Bear
     if (bearNestBowl > 0.005 || abs(bearNestRim) > 0.005) {
@@ -925,7 +933,7 @@ void main() {
                     * (0.64 + 0.36 * nBrush.g);
 
     // Real Arches cold-press paper luminosity modulation
-    vec3 paperTint = samplePaintedSnow(pCss * 1.25);
+    vec3 paperTint = samplePaintedSnow(pCss);
     float paperLum = dot(paperTint, vec3(0.30, 0.50, 0.20));
 
     // Clean luminous faceted pale-blue watercolor glacier wall (never muddy grey!)

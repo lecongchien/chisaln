@@ -175,7 +175,7 @@ const onPaintReady = () => {
   if (paused) renderFrame(simTime, false);
 };
 const waterTex  = createPaintTexture(gl, 'assets/arctic-water-tex.webp?v=wc1',      [6, 56, 82, 255],     true,  onPaintReady);
-const snowTex   = createPaintTexture(gl, 'assets/arctic-snow-tex.webp?v=clean5',    [253, 248, 235, 255], true,  onPaintReady);
+const snowTex   = createPaintTexture(gl, 'assets/arctic-snow-tex.webp?v=thumb6',    [253, 248, 234, 255], false, onPaintReady);
 const floesTex  = createPaintTexture(gl, 'assets/arctic-floes-atlas.webp?v=wc1',    [0, 0, 0, 0],         false, onPaintReady);
 
 function sampleSdfB(px, py) {
