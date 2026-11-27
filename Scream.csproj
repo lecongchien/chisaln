@@ -13,7 +13,7 @@
     <RootNamespace>Scream</RootNamespace>
     <ApplicationManifest>host\app.manifest</ApplicationManifest>
     <ApplicationIcon>host\scream.ico</ApplicationIcon>
-    <Version>1.0.0</Version>
+    <Version>1.0.1</Version>
     <Product>Scream Adaptive Wallpaper</Product>
     <Company>Scream</Company>
     <Description>Adaptive Studio Ghibli Live Wallpaper for Windows Desktop</Description>
