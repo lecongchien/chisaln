@@ -586,8 +586,11 @@ float evalSnowfall(vec2 pCss, float windT, float density) {
   return clamp(snow, 0.0, 0.85);
 }
 
-// Real Astronomical 3D Lunar Disc + Rippling Silver Moonlight Reflection on the Glacial Sea
-// Matches the app's Lunar Surface Atlas (uMoonTex) & live Moon Phase (uMoonPhase) bit-for-bit!
+// Real Astronomical 3D Lunar Disc + Wave-Slope Mirror Reflection on the Glacial Sea
+// Physically grounded:
+//   - Vertically mirrored lunar reflection (water acts as a horizontal mirror plane)
+//   - Organic wave-slope slicing & Fresnel ripple blur driven by live ocean fluid advection
+//   - Shimmering moonlight glitter corridor strictly aligned along the plane of incidence (-LIGHT)
 void applySeaMoonReflection(
   inout vec3 seaCol,
   vec2 pCss,
@@ -602,46 +605,51 @@ void applySeaMoonReflection(
 
   float moonTheta = phase * TAU;
   float moonIllum = 0.5 - 0.5 * cos(moonTheta);
-  float phaseGlow = mix(0.20, 1.0, pow(max(0.0001, moonIllum), 0.65));
+  float phaseGlow = mix(0.18, 1.0, pow(max(0.0001, moonIllum), 0.65));
 
-  // Gentle organic horizontal watercolor wave-ripple distortion on the reflected Moon!
-  float waveRipX = sin(pCss.y * 0.24 - t * 2.15 + fDisp.x * 5.0) * 3.2 + fDisp.x * 7.5;
-  float waveRipY = cos(pCss.x * 0.14 + t * 1.45 + fDisp.y * 4.0) * 1.6 + fDisp.y * 4.5;
-  vec2 mp = (pCss + vec2(waveRipX, waveRipY)) - uMoonPos.xy;
+  // Real water wave-slope perturbation: stronger horizontal shear across wave troughs/crests
+  float waveSlopeX = sin(pCss.y * 0.28 - t * 2.25 + fDisp.x * 5.5) * 4.4
+                   + sin(pCss.y * 0.62 - t * 3.40 + fDisp.y * 4.0) * 1.8
+                   + fDisp.x * 9.0;
+  float waveSlopeY = cos(pCss.x * 0.16 + t * 1.55 + fDisp.y * 4.2) * 1.9 + fDisp.y * 5.0;
+  vec2 mp = (pCss + vec2(waveSlopeX, waveSlopeY)) - uMoonPos.xy;
   float mRad = uMoonPos.z;
   float dMoon = length(mp);
   float dO = dMoon - mRad;
 
-  // Fade gently right against the vertical ice cliff wall so the reflection sits naturally on open water
+  // Confine water reflection strictly to open sea away from vertical ice cliffs
   float waterVis = smoothstep(0.0, 10.0, shoreD);
 
-  // 1. Soft silvery-pearl aureole & broad Arctic-cyan lunar corona across the dark Prussian sea
-  float aureole = exp(-max(dO, 0.0) / (mRad * 1.35)) * 0.54 * phaseGlow;
-  float corona  = exp(-max(dO, 0.0) / (mRad * 4.80)) * 0.28 * phaseGlow;
-  float iceHalo = exp(-pow((dMoon - mRad * 2.75) / (mRad * 0.78), 2.0)) * 0.14 * phaseGlow;
-  seaCol += vec3(0.95, 0.96, 0.88) * aureole * 0.58 * night * waterVis;
-  seaCol += vec3(0.46, 0.78, 0.96) * corona  * 0.88 * night * waterVis;
+  // 1. Soft atmospheric aureole, water-scattered corona & subtle 22-deg Arctic ice-crystal halo
+  float aureole = exp(-max(dO, 0.0) / (mRad * 1.40)) * 0.50 * phaseGlow;
+  float corona  = exp(-max(dO, 0.0) / (mRad * 4.60)) * 0.26 * phaseGlow;
+  float iceHalo = exp(-pow((dMoon - mRad * 2.75) / (mRad * 0.78), 2.0)) * 0.12 * phaseGlow;
+  seaCol += vec3(0.95, 0.96, 0.89) * aureole * 0.54 * night * waterVis;
+  seaCol += vec3(0.46, 0.78, 0.96) * corona  * 0.84 * night * waterVis;
   seaCol += vec3(0.74, 0.90, 1.00) * iceHalo * night * waterVis;
 
-  // 2. Shimmering matte watercolor moonlight water-path drifting down-current from the reflected Moon
+  // 2. Shimmering moonlight glitter corridor strictly along the incident-light plane (-LIGHT = (+0.60, +0.80))
+  vec2 incDir  = -LIGHT; // Points from upper-left Moon down-right along incident plane
+  vec2 incPerp = vec2(-incDir.y, incDir.x);
   vec2 trackRel = pCss - uMoonPos.xy;
-  float trackAlong = dot(trackRel, vec2(0.18, 0.984));
-  float trackCross = abs(dot(trackRel, vec2(-0.984, 0.18)) + waveRipX * 1.35);
-  float trackSpread = mRad * (0.75 + smoothstep(0.0, 260.0, max(0.0, trackAlong)) * 1.45);
+  float trackAlong = dot(trackRel, incDir);
+  float trackCross = abs(dot(trackRel, incPerp) + waveSlopeX * 1.25);
+  float trackSpread = mRad * (0.72 + smoothstep(0.0, 240.0, max(0.0, trackAlong)) * 1.35);
   float trackEnv = exp(-pow(trackCross / max(1.0, trackSpread), 2.0))
-                 * smoothstep(-mRad * 0.5, mRad * 0.8, trackAlong)
-                 * exp(-max(0.0, trackAlong) / 260.0);
-  float ripBands = pow(0.5 + 0.5 * sin(pCss.y * 0.34 - t * 2.4 + fDisp.x * 6.0 + swell * 2.2), 3.0);
-  seaCol += vec3(0.84, 0.94, 0.99) * trackEnv * (0.14 + 0.32 * ripBands) * phaseGlow * night * waterVis;
+                 * smoothstep(-mRad * 0.75, mRad * 0.65, trackAlong)
+                 * exp(-max(0.0, trackAlong) / 235.0);
+  // Wave-crest Fresnel glints dancing along the incident corridor
+  float crestSpark = pow(0.5 + 0.5 * sin(dot(pCss, incDir) * 0.34 - t * 2.45 + fDisp.x * 6.5 + swell * 2.2), 3.5);
+  seaCol += vec3(0.84, 0.94, 0.99) * trackEnv * (0.10 + 0.34 * crestSpark) * phaseGlow * night * waterVis;
 
-  // 3. Crisp 3D Spherical Lunar Disc (real Lunar Maria + 3D terminator crater relief + Earthshine!)
-  float disc = smoothstep(2.2, -1.6, dO);
+  // 3. Vertically-Mirrored 3D Spherical Lunar Disc softened & sliced naturally by water ripples
+  float disc = smoothstep(3.6, -2.4, dO);
   if (disc > 0.002) {
-    vec2 mLocal = mp / max(1.0, mRad);
+    // Mirror reflection across water plane (invert Y relative to direct sky view!)
+    vec2 mLocal = vec2(mp.x, -mp.y) / max(1.0, mRad);
     float rN = length(mLocal);
     float rClamped = min(1.0, rN);
     float z3 = sqrt(max(0.0, 1.0 - rClamped * rClamped));
-    // Slight libration tilt matching begonia-shader & mini-moon preview
     vec2 rotM = vec2(mLocal.x * 0.97 + mLocal.y * 0.24, -mLocal.x * 0.24 + mLocal.y * 0.97);
     float lx = sin(moonTheta);
     float lz = -cos(moonTheta);
@@ -656,13 +664,14 @@ void applySeaMoonReflection(
     float relief = clamp(1.0 + (h0 - hx) * lx * 4.2 * termBand, 0.78, 1.24);
     float regolith = 0.94 + 0.12 * pow(max(0.0001, z3), 0.14);
 
-    vec3 moonLit = mTex.rgb * regolith * relief * vec3(1.05, 1.03, 0.96);
-    vec3 earthshine = seaCol * 0.85 + mTex.rgb * vec3(0.06, 0.095, 0.14) + vec3(0.01, 0.022, 0.038);
+    vec3 moonLit = mTex.rgb * regolith * relief * vec3(1.04, 1.02, 0.96);
+    vec3 earthshine = seaCol * 0.86 + mTex.rgb * vec3(0.055, 0.09, 0.135) + vec3(0.008, 0.020, 0.036);
     vec3 moonCol = mix(earthshine, moonLit, litPhase);
 
-    // Subtle water-surface modulation so the Moon truly lives inside the dark rippling water!
-    float waterSlice = 0.86 + 0.14 * sin(pCss.y * 0.48 - t * 2.8 + fDisp.y * 5.0);
-    seaCol = mix(seaCol, moonCol * waterSlice, disc * night * waterVis * 0.88);
+    // Water Fresnel reflection attenuation + organic wave-trough slicing (never looks pasted on top!)
+    float waveSlice = 0.76 + 0.24 * sin(pCss.y * 0.46 - t * 2.75 + fDisp.y * 5.5);
+    float fresnelWater = mix(0.68, 0.84, waveSlice);
+    seaCol = mix(seaCol, moonCol * (0.88 + 0.14 * waveSlice), disc * night * waterVis * fresnelWater);
   }
 }
 
@@ -696,19 +705,14 @@ void main() {
   float auroraAmt = uNight * uAurora;
   vec3 auroraCol = auroraAmt > 0.01 ? evalAurora(pCss, uTime) * auroraAmt : vec3(0.0);
 
-  // Global Moonlight directional falloff & lunar phase brightness (illuminates snow, cliffs & bear at night!)
+  // True Parallel Directional Moonlight Irradiance (Moon is 384,400 km away -> uniform parallel rays
+  // aligned strictly with LIGHT = (-0.60, -0.80) so snow rims, cliff shadows & bear shadow ALL agree!)
   float moonIllum = 0.5 - 0.5 * cos(uMoonPhase * TAU);
-  float moonGlowAmt = mix(0.22, 1.0, pow(max(0.0001, moonIllum), 0.65)) * uNight;
-  float cssDiag = max(1.0, length(uRes / max(0.5, uDpr)));
-  float dToMoon = length(pCss - uMoonPos.xy);
-  float moonFalloff = exp(-dToMoon / (cssDiag * 0.58));
-  vec2 toMoonDir = (uMoonPos.xy - pCss) / max(1.0, dToMoon);
+  float moonGlowAmt = mix(0.16, 1.0, pow(max(0.0001, moonIllum), 0.65)) * uNight;
 
-  // Directional shoreline lighting & cliff wall thickness
+  // Unified parallel shoreline lighting & cliff wall thickness (consistent across Day, Sunset & Night!)
   float sLight = sampleField(pCss + LIGHT * 8.5) + shoreNoise;
   float slopeL = clamp((sSurf - sLight) * 0.12, -1.0, 1.0);
-  float sMoonLight = uNight > 0.02 ? (sampleField(pCss + toMoonDir * 9.0) + shoreNoise) : sSurf;
-  float moonSlope = clamp((sSurf - sMoonLight) * 0.12, -1.0, 1.0);
   float wallThickness = mix(10.0, 17.0, clamp(slopeL * 0.5 + 0.5, 0.0, 1.0));
   float snowMask = smoothstep(-1.0, 1.6, sSurf);
 
@@ -728,13 +732,14 @@ void main() {
     snowCol = mix(snowCol, snowHi, rimZone * clamp(-slopeL, 0.0, 1.0) * 0.45);
     snowCol = mix(snowCol, snowWash, rimZone * clamp(slopeL, 0.0, 1.0) * 0.48);
 
-    // Soft silvery-blue Moonlight pool & moon-facing snow-rim illumination at night!
+    // Uniform parallel silvery-blue Moonlight irradiance across the entire snow shelf (scaled by Moon Phase!)
     if (moonGlowAmt > 0.01) {
       vec3 moonTint = vec3(0.76, 0.89, 1.00);
-      float moonSnowWash = (0.16 + 0.34 * moonFalloff) * moonGlowAmt;
-      float moonCrest = rimZone * clamp(-moonSlope, 0.0, 1.0) * (0.35 + 0.45 * moonFalloff) * moonGlowAmt;
-      snowCol = mix(snowCol, snowCol * 1.24 + moonTint * 0.14, clamp(moonSnowWash, 0.0, 0.48));
-      snowCol += moonTint * moonCrest * 0.34;
+      // Even planar snow receives uniform directional moonlight; crests facing LIGHT catch extra silver rim
+      float moonSnowWash = 0.24 * moonGlowAmt;
+      float moonCrest = rimZone * clamp(-slopeL, 0.0, 1.0) * 0.62 * moonGlowAmt;
+      snowCol = mix(snowCol, snowCol * 1.22 + moonTint * 0.11, moonSnowWash);
+      snowCol += moonTint * moonCrest * 0.30;
     }
 
     // Composite sparse, crisp brittle polyline glacier cracks (matte pale-ice wash + dip-pen ink!)
@@ -746,7 +751,7 @@ void main() {
       snowCol = mix(snowCol, fissureInk, crackEval.x);
     }
 
-    // Subtle sunlit & moonlit diamond ice-crystal glints on snow
+    // Subtle sunlit & moonlit diamond ice-crystal glints uniformly across the snow shelf
     vec2 spCell = floor(pCss / 24.0);
     float spRnd = hash2(spCell + uSeed * 3.1);
     if (spRnd > 0.94) {
@@ -754,7 +759,7 @@ void main() {
       vec2 gv = fract(pCss / 24.0) - (0.18 + spOff * 0.64);
       float twinkle = pow(max(0.0, sin(uTime * (1.5 + spRnd * 2.0) + spRnd * 48.0)), 8.0);
       float glint = (1.0 - smoothstep(0.01, 0.085, length(gv))) * twinkle;
-      float glintBoost = 0.28 + moonGlowAmt * (0.18 + 0.38 * moonFalloff);
+      float glintBoost = 0.28 + moonGlowAmt * 0.34;
       snowCol += mix(vec3(1.0, 0.99, 0.95), vec3(0.86, 0.96, 1.0), uNight) * glint * glintBoost;
     }
   }
@@ -832,10 +837,11 @@ void main() {
     // Painted BEFORE floating ice floes so drifting ice chunks glide naturally over the Moon reflection.
     applySeaMoonReflection(seaCol, pCss, fDisp, swell, shoreD, uWindTime, uNight, uMoonPhase);
 
-    // Cast soft matte shadow from overhanging snow cliff onto adjacent glacial sea
+    // Cast soft matte shadow from overhanging snow cliff along parallel -LIGHT (scaled by Moon Phase at night!)
     float sShadow = sampleField(pCss + LIGHT * 14.0) + shoreNoise;
     float cliffShadow = smoothstep(-2.0, 8.0, sShadow) * (1.0 - smoothstep(-1.0, 2.0, sSurf));
-    seaCol *= 1.0 - cliffShadow * mix(0.36, 0.44, uSunset);
+    float nightShadowGain = mix(1.0, mix(0.42, 0.95, moonGlowAmt / max(0.001, uNight)), uNight);
+    seaCol *= 1.0 - cliffShadow * mix(0.36, 0.44, uSunset) * nightShadowGain;
 
     // Hand-painted MATTE gouache white water flecks & rare crisp snow-sparkles (exact crop look!)
     float gouacheFleck = evalGouacheWaterFlecks(pCss, uWindTime, fDisp, swell, shoreD);
@@ -871,10 +877,10 @@ void main() {
     wallCol *= (0.88 + 0.16 * paperLum);
     // Subtle dark wet-ice tone right along the waterline
     wallCol = mix(wallCol, mix(seaVirid, iceSh, 0.58), smoothstep(0.72, 1.0, wallDepthT) * 0.42);
-    // Luminous silver moonlit highlight along fractured ice-cliff faces angled toward the Moon at night!
+    // Luminous silver moonlit highlight along fractured ice-cliff faces angled toward parallel LIGHT!
     if (moonGlowAmt > 0.01) {
-      float cliffMoonLit = clamp(0.25 - moonSlope * 0.75, 0.0, 1.0) * (0.40 + 0.60 * moonFalloff);
-      wallCol += vec3(0.58, 0.80, 0.98) * cliffMoonLit * (1.0 - wallDepthT * 0.55) * moonGlowAmt * 0.34;
+      float cliffMoonLit = clamp(0.25 - slopeL * 0.75, 0.0, 1.0);
+      wallCol += vec3(0.58, 0.80, 0.98) * cliffMoonLit * (1.0 - wallDepthT * 0.55) * moonGlowAmt * 0.28;
     }
     // Crisp broken dip-pen vertical fracture strokes & connected 3D vertical cliff drops from surface cracks!
     wallCol = mix(wallCol, inkCol, clamp(facetLine * 0.42 + crackEval.z * 0.78, 0.0, 0.85));
@@ -906,7 +912,9 @@ void main() {
       if (shAlpha > 0.004) {
         vec3 shTint = mix(mix(vec3(0.68, 0.75, 0.89), vec3(0.49, 0.43, 0.64), uSunset),
                           vec3(0.08, 0.15, 0.27), uNight);
-        col = mix(col, col * mix(vec3(1.0), shTint, 0.54), shAlpha * 0.85);
+        // Physically modulate shadow contrast at night by Moon Phase (crisp under Full Moon, softer under New Moon!)
+        float shStr = mix(0.85, mix(0.42, 0.82, moonGlowAmt / max(0.001, uNight)), uNight);
+        col = mix(col, col * mix(vec3(1.0), shTint, 0.54), shAlpha * shStr);
       }
 
       // Un-premultiply FBO RGBA cleanly for razor-sharp edge compositing with zero dark halo
@@ -914,15 +922,15 @@ void main() {
       if (act.a > 0.004) {
         vec3 aCol = clamp(act.rgb / act.a, 0.0, 1.0);
         vec3 sunsetGraded = aCol * vec3(1.01, 0.87, 0.83) + vec3(0.045, 0.015, 0.03) * (1.0 - aCol.b);
-        // Moonlit Polar Night grading: soft silvery-blue moonlight glow across the sleeping bear's fur!
-        float bearMoonBoost = 0.88 + (0.28 + 0.30 * moonFalloff) * moonGlowAmt;
+        // Uniform parallel Moonlit Polar Night grading aligned with LIGHT = (-0.60, -0.80)
+        // (upper-left fur catches soft silver lunar rim; lower-right casts matching shadow!)
+        float bearMoonBoost = 0.86 + 0.42 * moonGlowAmt;
         vec3 nightGraded  = aCol * vec3(0.47, 0.60, 0.78) * bearMoonBoost + auroraCol * 0.14;
         if (moonGlowAmt > 0.01) {
-          // Gentle silvery rim sheen on the side of the bear facing the Moon
           vec2 bLocal = (aUv - vec2(0.50, 0.54)) * 2.0;
-          float bEdge = smoothstep(0.22, 0.58, length(bLocal));
-          float facingMoon = clamp(dot(normalize(bLocal + vec2(1e-4)), toMoonDir) * 0.5 + 0.5, 0.0, 1.0);
-          nightGraded += vec3(0.76, 0.90, 1.00) * bEdge * facingMoon * (0.14 + 0.18 * moonFalloff) * moonGlowAmt;
+          float bEdge = smoothstep(0.20, 0.56, length(bLocal));
+          float facingLight = clamp(dot(normalize(bLocal + vec2(1e-4)), LIGHT) * 0.5 + 0.5, 0.0, 1.0);
+          nightGraded += vec3(0.78, 0.91, 1.00) * bEdge * facingLight * 0.24 * moonGlowAmt;
         }
         aCol = mix(mix(aCol, sunsetGraded, uSunset * 0.85), nightGraded, uNight * 0.88);
         aCol *= 1.0 + paperTooth * 0.028;

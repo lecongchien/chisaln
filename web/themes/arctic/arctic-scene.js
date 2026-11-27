@@ -486,7 +486,12 @@ function tick(now) {
   }
 
   windRibbons.step(dt, Math.max(0, P.flow), W, H);
-  actors.step(dt, { mischief: P.mischief, showFriends: P.showFriends });
+  actors.step(dt, {
+    mischief: P.mischief,
+    showFriends: P.showFriends,
+    showBubbles: P.showBubbles,
+    flow: P.flow
+  });
 
   // Actors now render natively on WebGL2 GPU FBO (~0.02ms/mesh) -> update EVERY frame at locked 60 FPS!
   renderFrame(simTime, true);

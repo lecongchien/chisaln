@@ -38,6 +38,12 @@ export const HOLE_NORM = { x: 0.74, y: 0.57, rx: 0, ry: 0 };
 const BEAR_REF = 512;
 const BEAR_PIVOT_Y = 180 / 192;
 const HERO_TILE = BEAR_TILES_90.bearSleepMid;
+// Matches WIND_DIR in arctic-shader.js so exhaled warm breath drifts WITH the Arctic wind!
+const WIND_X = 0.848;
+const WIND_Y = 0.530;
+// Matches -LIGHT = (+0.60, +0.80) in arctic-shader.js for exact cast-shadow direction!
+const SHADOW_OFF_X = 11.0;
+const SHADOW_OFF_Y = 14.8;
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
@@ -96,7 +102,7 @@ export function createArcticActorsController(gl, onReady) {
 
   function setMouse() {}
 
-  function step(dt, { mischief = 1.0, showFriends = 1 } = {}) {
+  function step(dt, { mischief = 1.0, showFriends = 1, showBubbles = 1, flow = 1.0 } = {}) {
     if (showFriends < 0.5) return;
 
     const d = Math.min(0.05, Math.max(0, dt));
@@ -104,6 +110,7 @@ export function createArcticActorsController(gl, onReady) {
     sm.t += d;
 
     const pace = clamp(mischief, 0.35, 2.2);
+    const windSpd = clamp(flow, 0.1, 2.5);
 
     // Occasional natural micro ear-twitch (subtle organic flick, never jarring)
     sm.nextTwitchIn -= d * pace;
@@ -113,7 +120,8 @@ export function createArcticActorsController(gl, onReady) {
       phys.bearEar.impulse(dir * (4.2 + Math.random() * 2.4));
     }
 
-    // Occasional deep cozy sleep sigh + warm mist puff in crisp Arctic air
+    // Occasional deep cozy sleep sigh; warm condensation puffs only escape freely into cold air
+    // when no sleep bubble is sealing the nostril (physically consistent aerodynamics!)
     sm.nextSighIn -= d * pace;
     if (sm.nextSighIn <= 0) {
       sm.nextSighIn = 11.0 + Math.random() * 9.0;
@@ -122,20 +130,21 @@ export function createArcticActorsController(gl, onReady) {
     }
     if (sm.sighActive > 0) {
       sm.sighActive = Math.max(0, sm.sighActive - d);
-      if (sm.sighActive < 1.15 && sm.sighActive > 0.35 && Math.random() < d * 4.5) {
+      if (showBubbles < 0.5 && sm.sighActive < 1.15 && sm.sighActive > 0.35 && Math.random() < d * 5.2) {
+        // Exhale initially pushes gently out from snout, then entrains into WIND_DIR (top-down consistent!)
         sm.breathPuffs.push({
-          x: SNOUT_X + 6 + (Math.random() - 0.5) * 5,
-          y: SNOUT_Y - 2 + (Math.random() - 0.5) * 4,
-          vx: 8 + Math.random() * 7,
-          vy: -11 - Math.random() * 7,
-          r: 4.2 + Math.random() * 3.0,
+          x: SNOUT_X + 5 + (Math.random() - 0.5) * 4,
+          y: SNOUT_Y + 1 + (Math.random() - 0.5) * 4,
+          vx: 11 + WIND_X * (10 + 14 * windSpd) + (Math.random() - 0.5) * 5,
+          vy:  2 + WIND_Y * (10 + 14 * windSpd) + (Math.random() - 0.5) * 5,
+          r: 4.2 + Math.random() * 2.8,
           age: 0,
-          life: 1.25 + Math.random() * 0.35
+          life: 1.30 + Math.random() * 0.35
         });
       }
     }
 
-    // Gentle floating `z` particles rising slowly from sleeping head
+    // Gentle floating `z` particles rising slowly from sleeping head (nudged slightly by Arctic breeze)
     sm.zzzTimer -= d;
     if (sm.zzzTimer <= 0) {
       sm.zzzTimer = 1.65 + Math.random() * 0.75;
@@ -145,7 +154,7 @@ export function createArcticActorsController(gl, onReady) {
         age: 0,
         life: 2.75,
         size: 12.5 + Math.random() * 4.5,
-        drift: (Math.random() - 0.5) * 10
+        drift: (Math.random() - 0.5) * 8 + WIND_X * 7 * windSpd
       });
     }
 
@@ -155,20 +164,25 @@ export function createArcticActorsController(gl, onReady) {
     phys.bearEar.step(d, 0);
     phys.bearSigh.step(d, 0);
 
+    // Entrain warm breath puffs smoothly into Arctic WIND_DIR while expanding gently as they dissipate
+    const targetVx = WIND_X * (16 + 18 * windSpd);
+    const targetVy = WIND_Y * (16 + 18 * windSpd);
+    const kWind = 1 - Math.exp(-2.2 * d);
     for (let i = sm.breathPuffs.length - 1; i >= 0; i--) {
       const b = sm.breathPuffs[i];
       b.age += d;
-      b.vx *= Math.exp(-1.1 * d);
+      b.vx += (targetVx - b.vx) * kWind;
+      b.vy += (targetVy - b.vy) * kWind;
       b.x += b.vx * d;
       b.y += b.vy * d;
-      b.r += 8.2 * d;
+      b.r += 7.5 * d;
       if (b.age >= b.life) sm.breathPuffs.splice(i, 1);
     }
     for (let i = sm.zzzParticles.length - 1; i >= 0; i--) {
       const z = sm.zzzParticles[i];
       z.age += d;
       z.y -= 21 * d;
-      z.x += (8.5 + Math.sin(z.age * 2.6) * 9.5 + z.drift * 0.18) * d;
+      z.x += (8.5 + Math.sin(z.age * 2.6) * 9.0 + z.drift * 0.22) * d;
       if (z.age >= z.life) sm.zzzParticles.splice(i, 1);
     }
   }
@@ -194,10 +208,13 @@ export function createArcticActorsController(gl, onReady) {
       const groundPin = clamp((454 - v) / 145, 0, 1);
       const pinSmooth = groundPin * groundPin * (3 - 2 * groundPin);
 
-      // Zone 1: Ribcage & upper back flank (primary living expansion)
+      // Zone 1: Ribcage & upper back flank (primary living expansion + soft-tissue lateral fullness)
       const wRibs = radialWeight(u, v, 206, 224, 172, 138) * pinSmooth;
-      out[0] -= bRibs * 2.6 * wRibs;
-      out[1] -= bRibs * 5.4 * wRibs;
+      out[0] -= bRibs * 2.5 * wRibs;
+      out[1] -= bRibs * 5.2 * wRibs;
+      // Subtle volume-conserving lateral flank softness along lower ribcage curve
+      const wFlank = radialWeight(u, v, 148, 305, 110, 95) * pinSmooth;
+      out[0] -= bRibs * 1.35 * wFlank;
 
       // Zone 2: Upper shoulder & nape (0.32s delayed gentle wave)
       const wShoulder = radialWeight(u, v, 316, 194, 118, 108) * pinSmooth;
@@ -298,12 +315,13 @@ export function createArcticActorsController(gl, onReady) {
     const deform = makeLivingBreathDeform(simT);
     const [col, row] = HERO_TILE;
 
-    // 1. Soft ground-pinned watercolor shadow FBO (gently breathes with ribcage!)
+    // 1. Soft ground-pinned watercolor shadow FBO — cast strictly along -LIGHT (+11, +14.8)
+    //    AND deformed with the exact live breathing/ear-twitch mesh so the shadow breathes in lockstep!
     gpuRig.beginShadow();
     gpuRig.drawTile(
       bearAtlas, col, row, BEAR_ATLAS_META.cell, BEAR_REF,
-      BX + 12, BY_GROUND + 14, BEAR_W, BEAR_W, null,
-      { rot: 0, sx: sx * 1.03, sy: 0.85, alpha: 0.86, pivotY: BEAR_PIVOT_Y }
+      BX + SHADOW_OFF_X, BY_GROUND + SHADOW_OFF_Y, BEAR_W, BEAR_W, deform,
+      { rot: 0, sx: sx * 1.02, sy: sy * 0.87, alpha: 0.86, pivotY: BEAR_PIVOT_Y }
     );
 
     // 2. Razor-sharp 512x512 hand-inked Ghibli Polar Bear with 16x16 living breath mesh
