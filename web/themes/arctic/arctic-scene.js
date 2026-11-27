@@ -62,6 +62,7 @@ const gl = glCanvas.getContext('webgl2', {
 
 if (!gl) {
   document.getElementById('nogl').style.display = 'grid';
+  window.__screamReportError?.('WebGL2 unavailable');
   throw new Error('WebGL2 unavailable');
 }
 
@@ -114,9 +115,11 @@ function createPaintTexture(glCtx, url, fallbackRgba, repeat, onLoad) {
   );
 
   const img = new Image();
+  img.crossOrigin = 'anonymous';
   img.decoding = 'async';
   img.onload = () => {
     glCtx.bindTexture(glCtx.TEXTURE_2D, tex);
+    glCtx.pixelStorei(glCtx.UNPACK_ALIGNMENT, 4);
     glCtx.pixelStorei(glCtx.UNPACK_FLIP_Y_WEBGL, false);
     glCtx.pixelStorei(glCtx.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
     glCtx.texImage2D(glCtx.TEXTURE_2D, 0, glCtx.RGBA, glCtx.RGBA, glCtx.UNSIGNED_BYTE, img);
@@ -444,7 +447,7 @@ function renderFrame(t, upload2d = true, forceSync = false) {
 
 function tick(now) {
   requestAnimationFrame(tick);
-  if (perf.isHidden || (paused && !needsInitialSettle)) {
+  if ((perf.isHidden && readyNotified) || (paused && !needsInitialSettle)) {
     lastRaf = 0;
     perf.resetTiming();
     return;
@@ -494,12 +497,13 @@ function tick(now) {
   });
 
   // Actors now render natively on WebGL2 GPU FBO (~0.02ms/mesh) -> update EVERY frame at locked 60 FPS!
-  renderFrame(simTime, true);
-  if (!readyNotified) {
-    readyNotified = true;
-    bridge.notifyReady();
+  if (renderFrame(simTime, true)) {
+    if (!readyNotified) {
+      readyNotified = true;
+      bridge.notifyReady();
+    }
+    needsInitialSettle = false;
   }
-  needsInitialSettle = false;
 }
 
 const bridge = createHostBridge({

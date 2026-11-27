@@ -5,6 +5,8 @@ import Foundation
 /// Settings window, Menu Bar controls, debounced persistence, and sleep/display recovery.
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var store: SettingsStore!
+    private var webServer: LocalWebServer!
+    private var appNapActivity: NSObjectProtocol?
     private var menuBar: MenuBarController!
     private var updater: AppUpdater!
     private var wallpapers: [WallpaperWindowController] = []
@@ -18,6 +20,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         let webDir = resolveWebDir()
         store = SettingsStore(webDir: webDir)
+
+        // Start loopback HTTP server (http://127.0.0.1:<port>) so WKWebView gets a true W3C Secure Context
+        // and real Same-Origin iframes/ES modules/WebGL2 textures (avoids scream:// opaque-origin WebKit bugs!)
+        webServer = LocalWebServer(webDir: webDir)
+        _ = webServer.start()
+
+        // Prevent macOS App Nap from suspending the desktop WKWebView GPU process when Settings is closed
+        appNapActivity = ProcessInfo.processInfo.beginActivity(
+            options: [.userInitiatedAllowingIdleSystemSleep],
+            reason: "Render adaptive live desktop wallpaper"
+        )
 
         menuBar = MenuBarController(
             onOpenSettings: { [weak self] in self?.openSettings() },
@@ -65,6 +78,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         store?.saveSettings()
         disposeWallpapers()
         settingsWindow?.shutdown()
+        webServer?.stop()
+        if let act = appNapActivity {
+            ProcessInfo.processInfo.endActivity(act)
+            appNapActivity = nil
+        }
     }
 
     private func resolveWebDir() -> URL {
@@ -97,9 +115,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard !allScreens.isEmpty else { return }
         let targets: [NSScreen] = store.current.multiMonitor ? allScreens : [NSScreen.main ?? allScreens[0]]
 
+        let baseURL = webServer.baseURL ?? "scream://app"
         for (idx, scr) in targets.enumerated() {
             let wc = WallpaperWindowController(
                 store: store,
+                webBaseURL: baseURL,
                 screen: scr,
                 initialThemeId: theme?.id ?? store.current.theme,
                 initialPage: page,
@@ -152,7 +172,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func openSettings() {
         if settingsWindow == nil {
-            settingsWindow = SettingsWindowController(store: store) { [weak self] raw in
+            let baseURL = webServer.baseURL ?? "scream://app"
+            settingsWindow = SettingsWindowController(store: store, webBaseURL: baseURL) { [weak self] raw in
                 self?.handleSettingsMessage(raw)
             }
         }

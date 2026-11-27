@@ -89,6 +89,7 @@ const gl = glCanvas.getContext("webgl2", {
 
 if (!gl) {
   document.getElementById("nogl").style.display = "grid";
+  window.__screamReportError?.("WebGL2 unavailable");
   throw new Error("WebGL2 unavailable");
 }
 

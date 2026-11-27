@@ -119,6 +119,11 @@ cat > "${APP_BUNDLE}/Contents/Info.plist" <<EOF
   <true/>
   <key>NSAppleEventsUsageDescription</key>
   <string>Scream reads macOS Desktop icon positions from Finder so live wallpapers adapt smoothly around your icons.</string>
+  <key>NSAppTransportSecurity</key>
+  <dict>
+    <key>NSAllowsLocalNetworking</key>
+    <true/>
+  </dict>
   <key>ScreamUpdateManifestUrl</key>
   <string>${UPDATE_MANIFEST_URL}</string>
 </dict>

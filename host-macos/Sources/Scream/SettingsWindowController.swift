@@ -12,13 +12,17 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     var windowNumber: Int { window.windowNumber }
     var isVisible: Bool { window.isVisible && !window.isMiniaturized }
 
-    init(store: SettingsStore, onMessage: @escaping (String) -> Void) {
+    init(store: SettingsStore, webBaseURL: String, onMessage: @escaping (String) -> Void) {
         self.store = store
         self.onMessage = onMessage
 
         let config = WKWebViewConfiguration()
-        config.setURLSchemeHandler(LocalWebSchemeHandler(webDir: store.webDir), forURLScheme: "scream")
+        if webBaseURL.hasPrefix("scream://") {
+            config.setURLSchemeHandler(LocalWebSchemeHandler(webDir: store.webDir), forURLScheme: "scream")
+        }
         config.mediaTypesRequiringUserActionForPlayback = []
+        let shimScript = WKUserScript(source: screamReceiveShimJS, injectionTime: .atDocumentStart, forMainFrameOnly: true)
+        config.userContentController.addUserScript(shimScript)
 
         let win = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1160, height: 740),
@@ -33,6 +37,9 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
 
         let wv = WKWebView(frame: win.contentView?.bounds ?? .zero, configuration: config)
         wv.autoresizingMask = [.width, .height]
+        if #available(macOS 13.3, *) {
+            wv.isInspectable = true
+        }
 
         self.window = win
         self.webView = wv
@@ -45,7 +52,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         win.delegate = self
         win.contentView = wv
 
-        if let url = URL(string: "scream://app/settings.html") {
+        if let url = URL(string: "\(webBaseURL)/settings.html?host=1") {
             wv.load(URLRequest(url: url))
         }
     }

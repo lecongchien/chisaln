@@ -48,6 +48,7 @@ const gl = glCanvas.getContext('webgl2', {
 
 if (!gl) {
   document.getElementById('nogl').style.display = 'grid';
+  window.__screamReportError?.('WebGL2 unavailable');
   throw new Error('WebGL2 unavailable');
 }
 
@@ -330,12 +331,13 @@ function renderFrame(t, upload2d = true, forceSync = false) {
   gl.uniform2f(U.uSkiffTilt, st[0], st[1]);
 
   gl.drawArrays(gl.TRIANGLES, 0, 3);
+  return true;
 }
 
 function tick(now) {
   requestAnimationFrame(tick);
 
-  if (perf.isHidden) {
+  if (perf.isHidden && readyNotified) {
     lastRaf = 0;
     perf.resetTiming();
     return;
@@ -385,12 +387,13 @@ function tick(now) {
     });
   }
 
-  renderFrame(simTime, perf.shouldUpload2d(now, needsInitialSettle));
-  if (!readyNotified) {
-    readyNotified = true;
-    bridge.notifyReady();
+  if (renderFrame(simTime, perf.shouldUpload2d(now, needsInitialSettle))) {
+    if (!readyNotified) {
+      readyNotified = true;
+      bridge.notifyReady();
+    }
+    needsInitialSettle = false;
   }
-  needsInitialSettle = false;
 }
 
 const bridge = createHostBridge({

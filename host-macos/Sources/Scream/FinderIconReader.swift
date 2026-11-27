@@ -51,15 +51,38 @@ final class FinderIconReader {
             proc.standardError = errPipe
 
             var data = Data()
+            let doneSem = DispatchSemaphore(value: 0)
+            proc.terminationHandler = { _ in doneSem.signal() }
+
             do {
                 try proc.run()
-                data = outPipe.fileHandleForReading.readDataToEndOfFile()
-                proc.waitUntilExit()
             } catch {
                 self.permissionDeniedUntil = Date().addingTimeInterval(15)
                 DispatchQueue.main.async { completion([], true) }
                 return
             }
+
+            // Drain stdout & stderr asynchronously with a 3.5s watchdog so a pending TCC Automation dialog
+            // or stalled Finder AppleEvent can NEVER deadlock `inFlight = true` permanently.
+            let readGroup = DispatchGroup()
+            readGroup.enter()
+            DispatchQueue.global(qos: .utility).async {
+                data = outPipe.fileHandleForReading.readDataToEndOfFile()
+                readGroup.leave()
+            }
+            readGroup.enter()
+            DispatchQueue.global(qos: .utility).async {
+                _ = errPipe.fileHandleForReading.readDataToEndOfFile()
+                readGroup.leave()
+            }
+
+            if doneSem.wait(timeout: .now() + 3.5) == .timedOut {
+                proc.terminate()
+                self.permissionDeniedUntil = Date().addingTimeInterval(12)
+                DispatchQueue.main.async { completion([], true) }
+                return
+            }
+            _ = readGroup.wait(timeout: .now() + 1.0)
 
             if proc.terminationStatus != 0 {
                 // User may have not granted Finder Automation permission yet — back off gently

@@ -23,10 +23,35 @@ final class ScriptMessageProxy: NSObject, WKScriptMessageHandler {
     }
 }
 
+/// Shared document-start script buffering any early native->JS messages until page modules attach
+/// `window.__screamReceive = handler`, eliminating cold-boot IPC race conditions on macOS WKWebView.
+let screamReceiveShimJS = """
+(function() {
+  var queue = [];
+  var handler = null;
+  Object.defineProperty(window, '__screamReceive', {
+    configurable: true,
+    get: function() {
+      return handler || function(msg) { queue.push(msg); };
+    },
+    set: function(fn) {
+      handler = (typeof fn === 'function') ? fn : null;
+      if (handler && queue.length) {
+        var pending = queue.splice(0, queue.length);
+        for (var i = 0; i < pending.length; i++) {
+          try { handler(pending[i]); } catch (e) {}
+        }
+      }
+    }
+  });
+})();
+"""
+
 /// Borderless desktop-level WKWebView window placed strictly above the static macOS wallpaper
-/// and strictly below Finder's desktop icons (`kCGDesktopWindowLevel + 1`).
+/// and strictly below Finder's desktop icons & Sonoma Desktop Widgets (`kCGDesktopWindowLevel + 1`).
 final class WallpaperWindowController: NSObject, WKNavigationDelegate {
     private let store: SettingsStore
+    private let webBaseURL: String
     private var targetScreen: NSScreen
     private let getIgnoredWindowNumbers: () -> Set<Int>
 
@@ -48,6 +73,7 @@ final class WallpaperWindowController: NSObject, WKNavigationDelegate {
     private var lastIconsJson = ""
     private var lastPauseState = -1
     private var lastMousePt = NSPoint(x: -9999, y: -9999)
+    private var navRetryCount = 0
     private var pendingShareCallback: ((Bool, String, String) -> Void)?
 
     var onIconsSnapshotUpdated: ((_ json: String, _ count: Int, _ visible: Bool) -> Void)?
@@ -60,6 +86,7 @@ final class WallpaperWindowController: NSObject, WKNavigationDelegate {
 
     init(
         store: SettingsStore,
+        webBaseURL: String,
         screen: NSScreen,
         initialThemeId: String,
         initialPage: String,
@@ -68,6 +95,7 @@ final class WallpaperWindowController: NSObject, WKNavigationDelegate {
         getIgnoredWindowNumbers: @escaping () -> Set<Int>
     ) {
         self.store = store
+        self.webBaseURL = webBaseURL
         self.targetScreen = screen
         self.currentThemeId = initialThemeId.isEmpty ? "arctic" : initialThemeId
         self.currentPage = initialPage
@@ -76,8 +104,12 @@ final class WallpaperWindowController: NSObject, WKNavigationDelegate {
         self.getIgnoredWindowNumbers = getIgnoredWindowNumbers
 
         let config = WKWebViewConfiguration()
-        config.setURLSchemeHandler(LocalWebSchemeHandler(webDir: store.webDir), forURLScheme: "scream")
+        if webBaseURL.hasPrefix("scream://") {
+            config.setURLSchemeHandler(LocalWebSchemeHandler(webDir: store.webDir), forURLScheme: "scream")
+        }
         config.mediaTypesRequiringUserActionForPlayback = []
+        let shimScript = WKUserScript(source: screamReceiveShimJS, injectionTime: .atDocumentStart, forMainFrameOnly: true)
+        config.userContentController.addUserScript(shimScript)
 
         let win = NSWindow(
             contentRect: screen.frame,
@@ -85,18 +117,24 @@ final class WallpaperWindowController: NSObject, WKNavigationDelegate {
             backing: .buffered,
             defer: false
         )
-        // Strictly above macOS desktop picture and strictly below Finder desktop icons!
+        // Strictly above macOS desktop picture and strictly below Sonoma Widgets & Finder desktop icons!
         win.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopWindow)) + 1)
         win.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
         win.isOpaque = true
         win.hasShadow = false
         win.ignoresMouseEvents = true
+        win.canHide = false
+        win.hidesOnDeactivate = false
         win.backgroundColor = NSColor(calibratedRed: 14.0/255.0, green: 78.0/255.0, blue: 108.0/255.0, alpha: 1.0)
         win.setFrame(screen.frame, display: true)
 
         let wv = WKWebView(frame: CGRect(origin: .zero, size: screen.frame.size), configuration: config)
         wv.autoresizingMask = [.width, .height]
+        wv.wantsLayer = true
         wv.setValue(false, forKey: "drawsBackground")
+        if #available(macOS 13.3, *) {
+            wv.isInspectable = true
+        }
 
         self.window = win
         self.webView = wv
@@ -125,7 +163,7 @@ final class WallpaperWindowController: NSObject, WKNavigationDelegate {
         lastPauseState = -1
         let q = store.current.renderQuality
         let encoded = currentThemeId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "arctic"
-        if let url = URL(string: "scream://app/stage.html?host=1&theme=\(encoded)&q=\(q)") {
+        if let url = URL(string: "\(webBaseURL)/stage.html?host=1&theme=\(encoded)&q=\(q)") {
             webView.load(URLRequest(url: url))
         }
     }
@@ -229,9 +267,18 @@ final class WallpaperWindowController: NSObject, WKNavigationDelegate {
               let type = root["t"] as? String else { return }
 
         switch type {
+        case "stageReady":
+            stageLoaded = true
+            navRetryCount = 0
+            sendThemeSettings(store.getEffectiveParams(for: store.current.theme))
+            sendMoonConfig(mode: store.current.moonMode, date: store.current.moonDate)
+            sendRenderQuality(store.current.renderQuality)
+            pollIcons()
+
         case "ready":
             stageLoaded = true
             pageReady = true
+            navRetryCount = 0
             sendThemeSettings(store.getEffectiveParams(for: store.current.theme))
             sendMoonConfig(mode: store.current.moonMode, date: store.current.moonDate)
             sendRenderQuality(store.current.renderQuality)
@@ -294,7 +341,7 @@ final class WallpaperWindowController: NSObject, WKNavigationDelegate {
     }
 
     private func pollIcons() {
-        guard !shuttingDown, pageReady else { return }
+        guard !shuttingDown, (stageLoaded || pageReady) else { return }
         if lastPauseState == 1 && !lastIconsJson.isEmpty { return }
 
         let primaryHeight = NSScreen.screens.first?.frame.height ?? targetScreen.frame.height
@@ -305,7 +352,7 @@ final class WallpaperWindowController: NSObject, WKNavigationDelegate {
         let screenH = max(1, Int(frame.height.rounded()))
 
         iconReader.readAsync { [weak self] allRects, visible in
-            guard let self = self, !self.shuttingDown, self.pageReady else { return }
+            guard let self = self, !self.shuttingDown, (self.stageLoaded || self.pageReady) else { return }
             var boxes: [[Int]] = []
             for r in allRects {
                 if r.right < screenLeft - 80 || r.left > screenLeft + screenW + 80 ||
@@ -363,6 +410,42 @@ final class WallpaperWindowController: NSObject, WKNavigationDelegate {
         let ny = max(0.0, min(1.0, 1.0 - (pt.y - frame.origin.y) / frame.height))
         let msg = String(format: "{\"t\":\"mouse\",\"x\":%.4f,\"y\":%.4f}", nx, ny)
         postJson(msg)
+    }
+
+    // MARK: - WKNavigationDelegate (Sonoma/Sequoia compositor kick + crash/failure auto-recovery)
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        guard !shuttingDown else { return }
+        // Force WebKit Metal compositor to commit layer updates on desktop-level non-key windows
+        webView.evaluateJavaScript("void document.body.offsetHeight;", completionHandler: nil)
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        handleNavError(error)
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        handleNavError(error)
+    }
+
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        guard !shuttingDown else { return }
+        NSLog("Scream: Desktop WKWebView WebContent process terminated — reloading stage.")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+            guard let self = self, !self.shuttingDown else { return }
+            self.reload()
+        }
+    }
+
+    private func handleNavError(_ error: Error) {
+        let nsErr = error as NSError
+        if nsErr.domain == NSURLErrorDomain && nsErr.code == NSURLErrorCancelled { return }
+        NSLog("Scream: Wallpaper navigation failed: \(error.localizedDescription)")
+        guard !shuttingDown, navRetryCount < 3 else { return }
+        navRetryCount += 1
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+            guard let self = self, !self.shuttingDown else { return }
+            self.loadStage(themeId: self.currentThemeId, page: self.currentPage)
+        }
     }
 
     func shutdown() {

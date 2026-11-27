@@ -170,6 +170,7 @@ export function createMoonSurfaceLoader(gl, onReady) {
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([220, 218, 206, 128]));
 
   const img = new Image();
+  img.crossOrigin = 'anonymous';
   img.decoding = 'async';
   img.onload = () => {
     gl.bindTexture(gl.TEXTURE_2D, tex);
@@ -201,6 +202,7 @@ function ensureMiniAtlasLoaded(cb) {
   if (_miniAtlasLoading) return false;
   _miniAtlasLoading = true;
   const img = new Image();
+  img.crossOrigin = 'anonymous';
   img.decoding = 'async';
   img.onload = () => {
     const s = 128;

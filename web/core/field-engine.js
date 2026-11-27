@@ -279,14 +279,20 @@ export function startShaderProgram(gl, fragSource, vertSource = FULLSCREEN_TRI_V
   gl.attachShader(prog, fs);
   gl.linkProgram(prog);
 
-  return { prog, vs, fs, parallelExt, done: false, failed: false };
+  return { prog, vs, fs, parallelExt, startedAt: performance.now(), done: false, failed: false };
 }
 
 export function pollShaderProgram(gl, job, forceSync = false) {
   if (!job) return null;
   if (job.done) return job.failed ? null : job.prog;
+  if (gl.isContextLost()) {
+    job.done = true;
+    job.failed = true;
+    throw new Error('WebGL2 context lost during shader compilation');
+  }
 
-  if (!forceSync && job.parallelExt) {
+  const timedOut = typeof job.startedAt === 'number' && (performance.now() - job.startedAt > 8000);
+  if (!forceSync && !timedOut && job.parallelExt) {
     if (!gl.getProgramParameter(job.prog, job.parallelExt.COMPLETION_STATUS_KHR)) {
       return null;
     }

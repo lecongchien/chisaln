@@ -10,6 +10,7 @@ import { createSmokePlume } from './skyship-smoke.js';
 
 function loadSprite(src, onReady) {
   const s = { img: new Image(), ready: false };
+  s.img.crossOrigin = 'anonymous';
   s.img.onload = () => {
     s.ready = true;
     onReady?.();
@@ -28,6 +29,7 @@ function createGpuSpriteTexture(gl, src, onLoaded) {
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 0, 0]));
 
   const img = new Image();
+  img.crossOrigin = 'anonymous';
   img.onload = () => {
     gl.bindTexture(gl.TEXTURE_2D, tex);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);

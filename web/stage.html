@@ -41,7 +41,8 @@
       z-index: 3;
     }
     .stage-layer.is-warming {
-      opacity: 0;
+      /* Keep opacity strictly > 0 so macOS WebKit never suspends requestAnimationFrame inside warming iframes */
+      opacity: 0.01;
       visibility: visible;
       pointer-events: none;
       z-index: 0;
@@ -125,10 +126,31 @@
         ready: false,
         syncedIcons: false,
         syncedMoon: false,
-        syncedQuality: currentQuality
+        syncedQuality: currentQuality,
+        bootTimer: null
       };
+      frame.addEventListener('error', () => {
+        clearTimeout(slot.bootTimer);
+        slot.bootTimer = null;
+        if (warmingId === slot.id) warmingId = null;
+        if (slot.id === activeId && !slot.ready) {
+          postUp({ t: 'sceneError', msg: `Failed to load ${theme.page}` });
+        }
+      });
       slots.set(theme.id, slot);
       return slot;
+    }
+
+    function armSlotBootWatchdog(slot) {
+      clearTimeout(slot.bootTimer);
+      slot.bootTimer = setTimeout(() => {
+        slot.bootTimer = null;
+        if (slot.ready) return;
+        if (warmingId === slot.id) warmingId = null;
+        if (slot.id === activeId) {
+          postUp({ t: 'sceneError', msg: `WebGL2 scene timed out (${slot.page})` });
+        }
+      }, 10000);
     }
 
     function syncSlotState(slot, { shouldPause, forcePauseManual = false } = {}) {
@@ -208,6 +230,7 @@
         warmingId = nextTheme.id;
         slot.loaded = true;
         slot.frame.classList.add('is-warming');
+        armSlotBootWatchdog(slot);
         slot.frame.src = buildChildSrc(nextTheme);
       }, delayMs);
     }
@@ -243,6 +266,7 @@
       if (!slot.loaded) {
         slot.loaded = true;
         slot.frame.classList.add('is-warming');
+        armSlotBootWatchdog(slot);
         slot.frame.src = buildChildSrc(theme, query);
       }
     }
@@ -340,6 +364,8 @@
       if (!msg || typeof msg !== 'object') return;
 
       if (msg.t === 'ready') {
+        clearTimeout(sourceSlot.bootTimer);
+        sourceSlot.bootTimer = null;
         sourceSlot.ready = true;
         if (warmingId === sourceSlot.id) warmingId = null;
 
@@ -356,6 +382,8 @@
       }
 
       if (msg.t === 'sceneError') {
+        clearTimeout(sourceSlot.bootTimer);
+        sourceSlot.bootTimer = null;
         if (warmingId === sourceSlot.id) warmingId = null;
         if (sourceSlot.id === activeId) postUp(msg);
         scheduleNextPrewarm(500);

@@ -11,6 +11,33 @@
   <canvas id="gl"></canvas>
   <div id="demo-icons"></div>
   <div id="nogl">WebGL2 không khả dụng trên thiết bị này.</div>
+  <script>
+    (function () {
+      var reported = false;
+      function report(msg) {
+        if (reported) return;
+        reported = true;
+        var payload = JSON.stringify({ t: 'sceneError', msg: String(msg || 'Unknown WebGL2 error') });
+        try {
+          if (window.parent && window.parent !== window) {
+            window.parent.postMessage(payload, '*');
+          } else if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.scream) {
+            window.webkit.messageHandlers.scream.postMessage(payload);
+          } else if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.postMessage(payload);
+          }
+        } catch (_) {}
+      }
+      window.__screamReportError = report;
+      window.addEventListener('error', function (ev) {
+        report(ev && (ev.message || (ev.error && ev.error.message)) || 'Script load error');
+      });
+      window.addEventListener('unhandledrejection', function (ev) {
+        var r = ev && ev.reason;
+        report((r && r.message) || String(r || 'Unhandled promise rejection'));
+      });
+    })();
+  </script>
   <script type="module" src="./themes/seatrain/seatrain-scene.js"></script>
 </body>
 </html>

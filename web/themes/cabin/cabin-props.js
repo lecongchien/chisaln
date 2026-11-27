@@ -37,6 +37,7 @@ function loadGpuTexture(gl, src, wrapS, onLoaded) {
   );
 
   const img = new Image();
+  img.crossOrigin = "anonymous";
   img.decoding = "async";
   img.onload = () => {
     gl.bindTexture(gl.TEXTURE_2D, tex);

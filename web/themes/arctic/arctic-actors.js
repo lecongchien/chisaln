@@ -60,6 +60,7 @@ export function createArcticActorsController(gl, onReady) {
 
   {
     const img = new Image();
+    img.crossOrigin = 'anonymous';
     img.decoding = 'async';
     img.onload = () => {
       bearAtlas = uploadAtlasTexture(gl, img);
